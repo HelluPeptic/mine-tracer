@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "package": "com.flowframe.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "MixinScreenHandler",
+    "MixinServerPlayerInteractionManager",
+    "MixinSignBlockEntity",
+    "ServerPlayerInteractionManagerAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

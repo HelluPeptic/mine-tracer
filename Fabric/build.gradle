@@ -1,0 +1,106 @@
+plugins {
+    id 'fabric-loom' version '1.6.9'
+    id 'maven-publish'
+    id 'idea'
+}
+
+repositories {
+    maven { url = "https://maven.fabricmc.net/" }
+    maven { url = "https://maven.terraformersmc.com/releases/" }
+    maven { url = "https://maven.blamejared.com/" }
+    maven { url = "https://maven.shedaniel.me/" }
+    mavenCentral()
+    maven { url "https://github.com/Serilum/.maven/raw/maven/" }
+    // Added LuckPerms official repository for API resolution
+    maven { url 'https://repo.lucko.me/' }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:1.20.1"
+    mappings "net.fabricmc:yarn:1.20.1+build.10:v2"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:0.92.0+1.20.1"
+    modImplementation "net.fabricmc:fabric-loader:0.15.7"
+
+    // Add Sponge Mixin for annotation processing and compile
+    implementation "org.spongepowered:mixin:0.8.5"
+    annotationProcessor "org.spongepowered:mixin:0.8.5"
+    compileOnly "org.spongepowered:mixin:0.8.5"
+
+    implementation "org.jetbrains:annotations:23.0.0"
+    implementation group: 'com.google.code.findbugs', name: 'jsr305', version: '3.0.1'
+    implementation 'com.google.code.gson:gson:2.10.1'
+    annotationProcessor 'com.google.code.gson:gson:2.10.1'
+    compileOnly 'com.google.code.gson:gson:2.10.1'
+    implementation 'com.google.guava:guava:32.1.2-jre'
+    annotationProcessor 'com.google.guava:guava:32.1.2-jre'
+    compileOnly 'com.google.guava:guava:32.1.2-jre'
+
+    modApi("com.terraformersmc:modmenu:7.0.1") { exclude(module: "fabric-api") }
+
+    modImplementation "net.fabricmc.fabric-api:fabric-command-api-v2:0.83.0+1.20.1"
+    modImplementation "me.lucko:fabric-permissions-api:0.2-SNAPSHOT"
+}
+
+loom {
+    mixin {
+        defaultRefmapName.set("${mod_id}_fabric.refmap.json")
+    }
+
+    runs {
+        client {
+            client()
+            setConfigName("Fabric Client")
+            ideConfigGenerated(true)
+            runDir("run")
+        }
+        server {
+            server()
+            setConfigName("Fabric Server")
+            ideConfigGenerated(true)
+            runDir("run")
+        }
+    }
+}
+
+version = rootProject.version
+
+processResources {
+    inputs.property "version", project.version
+
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${mod_name}" }
+    }
+    // Add Implementation-Version to manifest for dynamic version command
+    manifest {
+        attributes(
+            'Implementation-Version': project.version
+        )
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            groupId project.group
+            artifactId project.name
+            version project.version
+            from components.java
+        }
+    }
+
+    repositories {
+        maven {
+            url "file://" + System.getenv("local_maven")
+        }
+    }
+}
+
+archivesBaseName = 'minetracer-fabric-1.20.1'
+
+

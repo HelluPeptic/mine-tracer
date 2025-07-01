@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "minetracer",
+  "version": "${version}",
+
+  "name": "MineTracer",
+  "description": "Advanced block and container logging mod with rollback functionality for Minecraft servers.",
+  "authors": [ "HelluPeptic" ],
+
+  "license": "MIT",
+  "icon": "icon.png",
+
+  "environment": "*",
+  "entrypoints": { "main": [ "com.flowframe.FlowframeMod" ] },
+
+  "mixins": [
+    "minetracer.mixins.json"
+  ],
+
+  "depends": {
+    "fabricloader": ">=0.12.5",
+    "fabric": "*",
+    "minecraft": ">=1.20",
+    "java": ">=17"
+  }
+}
