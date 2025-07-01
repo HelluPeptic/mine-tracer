@@ -15,10 +15,10 @@ Advanced block and container logging mod with rollback functionality for Minecra
 
 ## Commands
 
-- `/flowframe minetracer lookup <filters>` - Search through logs
-- `/flowframe minetracer rollback <filters>` - Rollback player actions
-- `/flowframe minetracer page <number>` - Navigate lookup results
-- `/flowframe minetracer inspector` - Toggle inspector mode
+- `/minetracer lookup <filters>` - Search through logs
+- `/minetracer rollback <filters>` - Rollback player actions
+- `/minetracer page <number>` - Navigate lookup results
+- `/minetracer inspector` - Toggle inspector mode
 
 ## Filters
 
@@ -30,10 +30,10 @@ Advanced block and container logging mod with rollback functionality for Minecra
 
 ## Permissions
 
-- `flowframe.command.minetracer.lookup` - Access to lookup command
-- `flowframe.command.minetracer.rollback` - Access to rollback command
-- `flowframe.command.minetracer.inspector` - Access to inspector mode
-- `flowframe.command.minetracer.page` - Access to pagination
+- `minetracer.command.lookup` - Access to lookup command
+- `minetracer.command.rollback` - Access to rollback command
+- `minetracer.command.inspector` - Access to inspector mode
+- `minetracer.command.page` - Access to pagination
 
 ## Installation
 

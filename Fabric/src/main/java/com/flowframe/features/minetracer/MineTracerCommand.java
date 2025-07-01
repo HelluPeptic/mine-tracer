@@ -26,43 +26,41 @@ import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 
-// Handles /flowframe minetracer commands (lookup, rollback)
+// Handles /minetracer commands (lookup, rollback)
 public class MineTracerCommand {
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("flowframe")
-                .then(CommandManager.literal("minetracer")
+            dispatcher.register(CommandManager.literal("minetracer")
                     .then(CommandManager.literal("lookup")
-                        .requires(source -> Permissions.check(source, "flowframe.command.minetracer.lookup", 2))
+                        .requires(source -> Permissions.check(source, "minetracer.command.lookup", 2))
                         .then(CommandManager.argument("arg", StringArgumentType.greedyString())
                             .suggests(MineTracerCommand::suggestPlayers)
                             .executes(MineTracerCommand::lookup)
                         )
                     )
                     .then(CommandManager.literal("rollback")
-                        .requires(source -> Permissions.check(source, "flowframe.command.minetracer.rollback", 2))
+                        .requires(source -> Permissions.check(source, "minetracer.command.rollback", 2))
                         .then(CommandManager.argument("arg", StringArgumentType.greedyString())
                             .suggests(MineTracerCommand::suggestPlayers)
                             .executes(MineTracerCommand::rollback)
                         )
                     )
                     .then(CommandManager.literal("page")
-                        .requires(source -> Permissions.check(source, "flowframe.command.minetracer.page", 2))
+                        .requires(source -> Permissions.check(source, "minetracer.command.page", 2))
                         .then(CommandManager.argument("page", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
                             .executes(MineTracerCommand::lookupPage)
                         )
                     )
                     .then(CommandManager.literal("rollbackpage")
-                        .requires(source -> Permissions.check(source, "flowframe.command.minetracer.rollback", 2))
+                        .requires(source -> Permissions.check(source, "minetracer.command.rollback", 2))
                         .then(CommandManager.argument("page", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
                             .executes(MineTracerCommand::rollbackPage)
                         )
                     )
                     .then(CommandManager.literal("inspector")
-                        .requires(source -> Permissions.check(source, "flowframe.command.minetracer.inspector", 2))
+                        .requires(source -> Permissions.check(source, "minetracer.command.inspector", 2))
                         .executes(MineTracerCommand::toggleInspector)
                     )
-                )
             );
         });
     }
@@ -263,7 +261,7 @@ public class MineTracerCommand {
 
     public static int lookup(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
-        if (!Permissions.check(source, "flowframe.command.minetracer.lookup", 2)) {
+        if (!Permissions.check(source, "minetracer.command.lookup", 2)) {
             source.sendError(Text.literal("You do not have permission to use this command."));
             return 0;
         }
@@ -291,6 +289,10 @@ public class MineTracerCommand {
                     // Convert "place" to "placed" for backwards compatibility
                     if (act.equals("place")) {
                         act = "placed";
+                    }
+                    // Convert "sign" to "edit" since sign edits are stored as "edit" actions
+                    if (act.equals("sign")) {
+                        act = "edit";
                     }
                     if (!act.isEmpty()) {
                         actionFilters.add(act);
@@ -400,67 +402,126 @@ public class MineTracerCommand {
         source.sendFeedback(() -> Text.literal("----- MineTracer Lookup Results -----").formatted(Formatting.AQUA), false);
         for (int i = start; i < end; i++) {
             FlatLogEntry fle = logs.get(i);
+            // First send coordinates line
+            source.sendFeedback(() -> formatCoordinatesForChat(fle.entry), false);
+            // Then send the main action line  
             source.sendFeedback(() -> formatLogEntryForChat(fle.entry), false);
+            
+            // For sign logs, also display before/after text
+            if (fle.entry instanceof LogStorage.SignLogEntry) {
+                LogStorage.SignLogEntry se = (LogStorage.SignLogEntry) fle.entry;
+                if (se.action.equals("edit") && se.nbt != null && !se.nbt.isEmpty()) {
+                    try {
+                        com.google.gson.Gson gson = new com.google.gson.Gson();
+                        com.google.gson.JsonObject nbtObj = gson.fromJson(se.nbt, com.google.gson.JsonObject.class);
+                        String[] beforeLines = gson.fromJson(nbtObj.get("before"), String[].class);
+                        String[] afterLines = gson.fromJson(nbtObj.get("after"), String[].class);
+                        
+                        // Display [before] lines
+                        source.sendFeedback(() -> Text.literal("[before]").formatted(Formatting.RED), false);
+                        for (String line : beforeLines) {
+                            if (line != null && !line.trim().isEmpty()) {
+                                source.sendFeedback(() -> Text.literal("  " + line).formatted(Formatting.WHITE), false);
+                            }
+                        }
+                        
+                        // Display [after] lines  
+                        source.sendFeedback(() -> Text.literal("[after]").formatted(Formatting.GREEN), false);
+                        for (String line : afterLines) {
+                            if (line != null && !line.trim().isEmpty()) {
+                                source.sendFeedback(() -> Text.literal("  " + line).formatted(Formatting.WHITE), false);
+                            }
+                        }
+                    } catch (Exception e) {
+                        // If parsing fails, just show basic info
+                        source.sendFeedback(() -> Text.literal("  (Sign text parsing failed)").formatted(Formatting.GRAY), false);
+                    }
+                }
+            }
         }
 
-        source.sendFeedback(() -> Text.literal("Page " + page + "/" + totalPages + " (" + totalEntries + " entries) - Use /flowframe minetracer page <number> for other pages").formatted(Formatting.GRAY), false);
+        source.sendFeedback(() -> Text.literal("Page " + page + "/" + totalPages + " (" + totalEntries + " entries) - Use /minetracer page <number> for other pages").formatted(Formatting.GRAY), false);
     }
 
     public static Text formatLogEntryForChat(Object entry) {
         if (entry instanceof LogStorage.LogEntry) {
             LogStorage.LogEntry ce = (LogStorage.LogEntry) entry;
-            BlockPos pos = ce.pos;
-            String playerName = ce.playerName;
-            String containerName = "container"; // Generic container name since containerType field doesn't exist
-            String itemStr = ce.stack.getCount() + "x " + Registries.ITEM.getId(ce.stack.getItem()).toString();
             String timeAgo = getTimeAgo(Duration.between(ce.timestamp, Instant.now()).getSeconds());
-
-            String desc = "";
-            if ("withdrew".equals(ce.action)) {
-                desc = "withdrew " + itemStr + " from " + containerName;
-            } else if ("deposited".equals(ce.action)) {
-                desc = "deposited " + itemStr + " into " + containerName;
-            } else {
-                desc = ce.action + " " + itemStr + " " + containerName;
-            }
-
-            Formatting color = "withdrew".equals(ce.action) ? Formatting.RED : "deposited".equals(ce.action) ? Formatting.GREEN : Formatting.GRAY;
-
-            return Text.literal(
-                playerName + " " + desc + " at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + " (" + timeAgo + " ago)"
-            ).formatted(color);
+            String itemId = Registries.ITEM.getId(ce.stack.getItem()).toString();
+            String itemName = ce.stack.getItem().getName().getString();
+            
+            // Format: "8.00s ago — HelloPeptic withdrew 1x #minecraft:oak_log (Oak Log)"
+            return Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
+                .append(Text.literal(" — ").formatted(Formatting.WHITE))
+                .append(Text.literal(ce.playerName).formatted(Formatting.AQUA))
+                .append(Text.literal(" " + ce.action + " ").formatted(Formatting.GREEN))
+                .append(Text.literal(ce.stack.getCount() + "x ").formatted(Formatting.WHITE))
+                .append(Text.literal("#" + itemId).formatted(Formatting.YELLOW))
+                .append(Text.literal(" (" + itemName + ")").formatted(Formatting.GRAY));
+                
         } else if (entry instanceof LogStorage.BlockLogEntry) {
             LogStorage.BlockLogEntry be = (LogStorage.BlockLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(be.timestamp, Instant.now()).getSeconds());
-            String desc = be.action + " " + be.blockId;
-
-            return Text.literal(
-                be.playerName + " " + desc + " at " + be.pos.getX() + "," + be.pos.getY() + "," + be.pos.getZ() + " (" + timeAgo + " ago)"
-            ).formatted(Formatting.GRAY);
+            
+            // Get block display name
+            net.minecraft.block.Block block = Registries.BLOCK.get(new Identifier(be.blockId));
+            String blockName = block.getName().getString();
+            
+            // Format: "8.00s ago — HelloPeptic placed block #minecraft:glass (Glass)"
+            return Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
+                .append(Text.literal(" — ").formatted(Formatting.WHITE))
+                .append(Text.literal(be.playerName).formatted(Formatting.AQUA))
+                .append(Text.literal(" " + be.action + " block ").formatted(Formatting.GREEN))
+                .append(Text.literal("#" + be.blockId).formatted(Formatting.YELLOW))
+                .append(Text.literal(" (" + blockName + ")").formatted(Formatting.GRAY));
+                
         } else if (entry instanceof LogStorage.SignLogEntry) {
             LogStorage.SignLogEntry se = (LogStorage.SignLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(se.timestamp, Instant.now()).getSeconds());
-            String desc = "edited sign";
-
-            return Text.literal(
-                se.playerName + " " + desc + " at " + se.pos.getX() + "," + se.pos.getY() + "," + se.pos.getZ() + " (" + timeAgo + " ago)"
-            ).formatted(Formatting.YELLOW);
+            
+            // Format: "8.00s ago — HelloPeptic edited sign"
+            return Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
+                .append(Text.literal(" — ").formatted(Formatting.WHITE))
+                .append(Text.literal(se.playerName).formatted(Formatting.AQUA))
+                .append(Text.literal(" edited sign").formatted(Formatting.YELLOW));
+                
         } else if (entry instanceof LogStorage.KillLogEntry) {
             LogStorage.KillLogEntry ke = (LogStorage.KillLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(ke.timestamp, Instant.now()).getSeconds());
-            String desc = "killed " + ke.victimName; // Removed victimType since it doesn't exist
-
-            return Text.literal(
-                ke.killerName + " " + desc + " at " + ke.pos.getX() + "," + ke.pos.getY() + "," + ke.pos.getZ() + " (" + timeAgo + " ago)"
-            ).formatted(Formatting.DARK_RED);
+            
+            return Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
+                .append(Text.literal(" — ").formatted(Formatting.WHITE))
+                .append(Text.literal(ke.killerName).formatted(Formatting.AQUA))
+                .append(Text.literal(" killed ").formatted(Formatting.GREEN))
+                .append(Text.literal(ke.victimName).formatted(Formatting.RED));
         }
 
         return Text.literal("Unknown log entry").formatted(Formatting.GRAY);
     }
 
+    public static Text formatCoordinatesForChat(Object entry) {
+        BlockPos pos = null;
+        
+        if (entry instanceof LogStorage.LogEntry) {
+            pos = ((LogStorage.LogEntry) entry).pos;
+        } else if (entry instanceof LogStorage.BlockLogEntry) {
+            pos = ((LogStorage.BlockLogEntry) entry).pos;
+        } else if (entry instanceof LogStorage.SignLogEntry) {
+            pos = ((LogStorage.SignLogEntry) entry).pos;
+        } else if (entry instanceof LogStorage.KillLogEntry) {
+            pos = ((LogStorage.KillLogEntry) entry).pos;
+        }
+        
+        if (pos != null) {
+            return Text.literal("(x" + pos.getX() + "/y" + pos.getY() + "/z" + pos.getZ() + ")").formatted(Formatting.GOLD);
+        }
+        
+        return Text.literal("").formatted(Formatting.GRAY);
+    }
+
     public static int rollback(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
-        if (!Permissions.check(source, "flowframe.command.minetracer.rollback", 2)) {
+        if (!Permissions.check(source, "minetracer.command.rollback", 2)) {
             source.sendError(Text.literal("You do not have permission to use this command."));
             return 0;
         }
@@ -486,6 +547,10 @@ public class MineTracerCommand {
                     // Convert "place" to "placed" for backwards compatibility
                     if (act.equals("place")) {
                         act = "placed";
+                    }
+                    // Convert "sign" to "edit" since sign edits are stored as "edit" actions
+                    if (act.equals("sign")) {
+                        act = "edit";
                     }
                     if (!act.isEmpty()) {
                         actionFilters.add(act);
@@ -555,7 +620,7 @@ public class MineTracerCommand {
         int failedRollbacks = 0;
         ServerWorld world = source.getWorld();
 
-        int totalActions = containerLogs.size() + blockLogs.size();
+        int totalActions = containerLogs.size() + blockLogs.size() + signLogs.size();
         
 
         
@@ -593,6 +658,17 @@ public class MineTracerCommand {
                 }
             } else if ("broke".equals(entry.action)) {
                 if (performBlockPlaceRollback(world, entry)) {
+                    successfulRollbacks++;
+                } else {
+                    failedRollbacks++;
+                }
+            }
+        }
+
+        // Process sign rollbacks (edit -> restore original text)
+        for (LogStorage.SignLogEntry entry : signLogs) {
+            if ("edit".equals(entry.action)) {
+                if (performSignRollback(world, entry)) {
                     successfulRollbacks++;
                 } else {
                     failedRollbacks++;
@@ -812,9 +888,77 @@ public class MineTracerCommand {
         return state;
     }
 
+    private static boolean performSignRollback(ServerWorld world, LogStorage.SignLogEntry entry) {
+        try {
+            BlockPos pos = entry.pos;
+            
+            // Check if there's a sign at this position
+            net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
+            if (blockEntity instanceof net.minecraft.block.entity.SignBlockEntity) {
+                net.minecraft.block.entity.SignBlockEntity signEntity = (net.minecraft.block.entity.SignBlockEntity) blockEntity;
+                
+                // Parse the NBT to get the before text
+                if (entry.nbt != null && !entry.nbt.isEmpty()) {
+                    try {
+                        com.google.gson.Gson gson = new com.google.gson.Gson();
+                        com.google.gson.JsonObject nbtObj = gson.fromJson(entry.nbt, com.google.gson.JsonObject.class);
+                        String[] beforeLines = gson.fromJson(nbtObj.get("before"), String[].class);
+                        
+                        // Create Text objects from the before lines
+                        net.minecraft.text.Text[] beforeTexts = new net.minecraft.text.Text[4];
+                        for (int i = 0; i < 4; i++) {
+                            if (i < beforeLines.length && beforeLines[i] != null) {
+                                beforeTexts[i] = net.minecraft.text.Text.literal(beforeLines[i]);
+                            } else {
+                                beforeTexts[i] = net.minecraft.text.Text.literal("");
+                            }
+                        }
+                        
+                        // Try to restore the sign text by directly modifying the NBT
+                        try {
+                            net.minecraft.nbt.NbtCompound signNbt = signEntity.createNbt();
+                            
+                            // Modify the front text in the NBT
+                            if (signNbt.contains("front_text")) {
+                                net.minecraft.nbt.NbtCompound frontText = signNbt.getCompound("front_text");
+                                net.minecraft.nbt.NbtList messages = new net.minecraft.nbt.NbtList();
+                                for (net.minecraft.text.Text text : beforeTexts) {
+                                    // Use the text's JSON representation
+                                    String jsonText = net.minecraft.text.Text.Serializer.toJson(text);
+                                    messages.add(net.minecraft.nbt.NbtString.of(jsonText));
+                                }
+                                frontText.put("messages", messages);
+                                signNbt.put("front_text", frontText);
+                                signEntity.readNbt(signNbt);
+                            }
+                        } catch (Exception nbtError) {
+                            System.err.println("[MineTracer] Could not restore sign via NBT: " + nbtError.getMessage());
+                            return false;
+                        }
+                        
+                        // Mark the sign as dirty to save changes
+                        signEntity.markDirty();
+                        
+                        // Update the block to trigger client updates
+                        world.updateListeners(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+                        
+                        return true;
+                    } catch (Exception e) {
+                        System.err.println("[MineTracer] Failed to parse sign NBT for rollback: " + e.getMessage());
+                        return false;
+                    }
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            System.err.println("[MineTracer] Error during sign rollback: " + e.getMessage());
+            return false;
+        }
+    }
+
     public static int lookupPage(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
-        if (!Permissions.check(source, "flowframe.command.minetracer.page", 2)) {
+        if (!Permissions.check(source, "minetracer.command.page", 2)) {
             source.sendError(Text.literal("You do not have permission to use this command."));
             return 0;
         }
@@ -834,7 +978,7 @@ public class MineTracerCommand {
 
     public static int rollbackPage(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
-        if (!Permissions.check(source, "flowframe.command.minetracer.rollback", 2)) {
+        if (!Permissions.check(source, "minetracer.command.rollback", 2)) {
             source.sendError(Text.literal("You do not have permission to use this command."));
             return 0;
         }
@@ -856,7 +1000,7 @@ public class MineTracerCommand {
 
     public static int toggleInspector(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
-        if (!Permissions.check(source, "flowframe.command.minetracer.inspector", 2)) {
+        if (!Permissions.check(source, "minetracer.command.inspector", 2)) {
             source.sendError(Text.literal("You do not have permission to use this command."));
             return 0;
         }

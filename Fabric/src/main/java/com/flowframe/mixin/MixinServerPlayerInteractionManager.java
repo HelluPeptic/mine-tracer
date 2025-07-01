@@ -61,7 +61,8 @@ public class MixinServerPlayerInteractionManager {
         }
         
         String nbt = fullNbt.isEmpty() ? null : fullNbt.toString();
-        LogStorage.logBlockAction("placed", player, placedPos, blockId.toString(), nbt);
+        
+        // Check if this is a sign - if so, only log as sign action, not block action
         if (blockEntity instanceof net.minecraft.block.entity.SignBlockEntity) {
             net.minecraft.block.entity.SignBlockEntity sign = (net.minecraft.block.entity.SignBlockEntity) blockEntity;
             // Extract all visible lines as plain text
@@ -75,6 +76,9 @@ public class MixinServerPlayerInteractionManager {
             }
             String beforeText = GSON.toJson(lines);
             LogStorage.logSignAction("placed", player, placedPos, beforeText, sign.createNbt().toString());
+        } else {
+            // Log as block action for non-sign blocks
+            LogStorage.logBlockAction("placed", player, placedPos, blockId.toString(), nbt);
         }
     }
     @org.spongepowered.asm.mixin.Unique
@@ -109,7 +113,8 @@ public class MixinServerPlayerInteractionManager {
         }
         
         String nbt = fullNbt.isEmpty() ? null : fullNbt.toString();
-        LogStorage.logBlockAction("broke", player, pos, blockId.toString(), nbt);
+        
+        // Check if this is a sign - if so, only log as sign action, not block action
         if (blockEntity instanceof SignBlockEntity) {
             SignBlockEntity sign = (SignBlockEntity) blockEntity;
             // Extract all visible lines as plain text
@@ -123,6 +128,9 @@ public class MixinServerPlayerInteractionManager {
             }
             String beforeText = GSON.toJson(lines);
             LogStorage.logSignAction("broke", player, pos, beforeText, sign.createNbt().toString());
+        } else {
+            // Log as block action for non-sign blocks
+            LogStorage.logBlockAction("broke", player, pos, blockId.toString(), nbt);
         }
     }
 
