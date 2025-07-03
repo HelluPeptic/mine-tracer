@@ -267,123 +267,143 @@ public class MineTracerCommand {
         }
 
         String arg = StringArgumentType.getString(ctx, "arg");
-        String userFilter = null;
-        String timeArg = null;
-        int range = 100;
-        java.util.Set<String> actionFilters = new java.util.HashSet<>();
-        String includeItem = null;
+        
+        // Parse filters asynchronously for better performance
+        CompletableFuture.supplyAsync(() -> {
+            String userFilter = null;
+            String timeArg = null;
+            int range = 100;
+            java.util.Set<String> actionFilters = new java.util.HashSet<>();
+            String includeItem = null;
 
-        // Parse filters
-        for (String part : arg.split(" ")) {
-            if (part.startsWith("user:")) {
-                userFilter = part.substring(5);
-            } else if (part.startsWith("time:")) {
-                timeArg = part.substring(5);
-            } else if (part.startsWith("range:")) {
-                try { range = Integer.parseInt(part.substring(6)); } catch (Exception ignored) {}
-            } else if (part.startsWith("action:")) {
-                String actions = part.substring(7).toLowerCase();
-                // Split by comma to support multiple actions
-                for (String act : actions.split(",")) {
-                    act = act.trim();
-                    // Convert "place" to "placed" for backwards compatibility
-                    if (act.equals("place")) {
-                        act = "placed";
+            // Parse filters
+            for (String part : arg.split(" ")) {
+                if (part.startsWith("user:")) {
+                    userFilter = part.substring(5);
+                } else if (part.startsWith("time:")) {
+                    timeArg = part.substring(5);
+                } else if (part.startsWith("range:")) {
+                    try { range = Integer.parseInt(part.substring(6)); } catch (Exception ignored) {}
+                } else if (part.startsWith("action:")) {
+                    String actions = part.substring(7).toLowerCase();
+                    for (String act : actions.split(",")) {
+                        act = act.trim();
+                        if (act.equals("place")) {
+                            act = "placed";
+                        }
+                        if (act.equals("sign")) {
+                            act = "edit";
+                        }
+                        if (!act.isEmpty()) {
+                            actionFilters.add(act);
+                        }
                     }
-                    // Convert "sign" to "edit" since sign edits are stored as "edit" actions
-                    if (act.equals("sign")) {
-                        act = "edit";
-                    }
-                    if (!act.isEmpty()) {
-                        actionFilters.add(act);
-                    }
+                } else if (part.startsWith("include:")) {
+                    includeItem = part.substring(8);
                 }
-            } else if (part.startsWith("include:")) {
-                includeItem = part.substring(8);
             }
-        }
 
-        BlockPos playerPos = source.getPlayer().getBlockPos();
-        Instant cutoff = null;
-        if (timeArg != null) {
-            long seconds = parseTimeArg(timeArg);
-            cutoff = Instant.now().minusSeconds(seconds);
-        }
+            BlockPos playerPos = source.getPlayer().getBlockPos();
+            Instant cutoff = null;
+            if (timeArg != null) {
+                long seconds = parseTimeArg(timeArg);
+                cutoff = Instant.now().minusSeconds(seconds);
+            }
 
-        // Gather all logs
-        List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(playerPos, range, userFilter);
-        List<LogStorage.SignLogEntry> signLogs = LogStorage.getSignLogsInRange(playerPos, range, userFilter);
-        List<LogStorage.LogEntry> containerLogs = LogStorage.getLogsInRange(playerPos, range);
-        // For kill logs, filter by killer if action:kill, otherwise by victim
-        boolean filterByKiller = actionFilters.contains("kill");
-        List<LogStorage.KillLogEntry> killLogs = LogStorage.getKillLogsInRange(playerPos, range, userFilter, filterByKiller);
+            // Execute all queries in parallel
+            CompletableFuture<List<LogStorage.BlockLogEntry>> blockLogsFuture = 
+                LogStorage.getBlockLogsInRangeAsync(playerPos, range, userFilter);
+                
+            CompletableFuture<List<LogStorage.SignLogEntry>> signLogsFuture = 
+                LogStorage.getSignLogsInRangeAsync(playerPos, range, userFilter);
+                
+            CompletableFuture<List<LogStorage.LogEntry>> containerLogsFuture = 
+                LogStorage.getLogsInRangeAsync(playerPos, range);
+                
+            boolean filterByKiller = actionFilters.contains("kill");
+            CompletableFuture<List<LogStorage.KillLogEntry>> killLogsFuture = 
+                LogStorage.getKillLogsInRangeAsync(playerPos, range, userFilter, filterByKiller);
 
-        // Apply user filter to container logs (since getLogsInRange doesn't accept userFilter)
-        if (userFilter != null) {
-            final String userFilterFinal = userFilter;
-            containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
-        }
+            try {
+                List<LogStorage.BlockLogEntry> blockLogs = blockLogsFuture.get();
+                List<LogStorage.SignLogEntry> signLogs = signLogsFuture.get();
+                List<LogStorage.LogEntry> containerLogs = containerLogsFuture.get();
+                List<LogStorage.KillLogEntry> killLogs = killLogsFuture.get();
 
-        // Apply time filter
-        if (cutoff != null) {
-            final Instant cutoffFinal = cutoff;
-            blockLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
-            signLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
-            containerLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
-            killLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
-        }
+                // Apply user filter to container logs
+                if (userFilter != null) {
+                    final String userFilterFinal = userFilter;
+                    containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
+                }
 
-        // Filter by action if specified - check if entry action matches any of the specified actions
-        if (!actionFilters.isEmpty()) {
-            containerLogs.removeIf(entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
-            blockLogs.removeIf(entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
-            signLogs.removeIf(entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
-            killLogs.removeIf(entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
-        }
+                // Apply time filter
+                if (cutoff != null) {
+                    final Instant cutoffFinal = cutoff;
+                    blockLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+                    signLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+                    containerLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+                    killLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+                }
 
-        // Filter by include item if specified
-        if (includeItem != null && !includeItem.isEmpty()) {
-            final String includeItemFinal = includeItem;
-            containerLogs.removeIf(entry -> !Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItemFinal));
-            // For block logs, filter by block ID instead of item ID
-            blockLogs.removeIf(entry -> !entry.blockId.equals(includeItemFinal));
-        }
+                // Filter by action if specified
+                if (!actionFilters.isEmpty()) {
+                    containerLogs.removeIf(entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
+                    blockLogs.removeIf(entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
+                    signLogs.removeIf(entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
+                    killLogs.removeIf(entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
+                }
 
-        // Combine and sort all logs by timestamp (most recent first)
-        List<FlatLogEntry> flatList = new ArrayList<>();
-        for (LogStorage.LogEntry entry : containerLogs) {
-            flatList.add(new FlatLogEntry(entry, "container"));
-        }
-        for (LogStorage.BlockLogEntry entry : blockLogs) {
-            flatList.add(new FlatLogEntry(entry, "block"));
-        }
-        for (LogStorage.SignLogEntry entry : signLogs) {
-            flatList.add(new FlatLogEntry(entry, "sign"));
-        }
-        for (LogStorage.KillLogEntry entry : killLogs) {
-            flatList.add(new FlatLogEntry(entry, "kill"));
-        }
+                // Filter by include item if specified
+                if (includeItem != null && !includeItem.isEmpty()) {
+                    final String includeItemFinal = includeItem;
+                    containerLogs.removeIf(entry -> !Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItemFinal));
+                    blockLogs.removeIf(entry -> !entry.blockId.equals(includeItemFinal));
+                }
 
-        flatList.sort((a, b) -> {
-            Instant aTime = a.entry instanceof LogStorage.LogEntry ? ((LogStorage.LogEntry)a.entry).timestamp :
-                           a.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)a.entry).timestamp :
-                           a.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)a.entry).timestamp :
-                           a.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)a.entry).timestamp :
-                           Instant.EPOCH;
-            Instant bTime = b.entry instanceof LogStorage.LogEntry ? ((LogStorage.LogEntry)b.entry).timestamp :
-                           b.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)b.entry).timestamp :
-                           b.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)b.entry).timestamp :
-                           b.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)b.entry).timestamp :
-                           Instant.EPOCH;
-            return bTime.compareTo(aTime);
+                // Combine and sort all logs by timestamp (most recent first)
+                List<FlatLogEntry> flatList = new ArrayList<>();
+                for (LogStorage.LogEntry entry : containerLogs) {
+                    flatList.add(new FlatLogEntry(entry, "container"));
+                }
+                for (LogStorage.BlockLogEntry entry : blockLogs) {
+                    flatList.add(new FlatLogEntry(entry, "block"));
+                }
+                for (LogStorage.SignLogEntry entry : signLogs) {
+                    flatList.add(new FlatLogEntry(entry, "sign"));
+                }
+                for (LogStorage.KillLogEntry entry : killLogs) {
+                    flatList.add(new FlatLogEntry(entry, "kill"));
+                }
+
+                flatList.sort((a, b) -> {
+                    Instant aTime = a.entry instanceof LogStorage.LogEntry ? ((LogStorage.LogEntry)a.entry).timestamp :
+                                   a.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)a.entry).timestamp :
+                                   a.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)a.entry).timestamp :
+                                   a.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)a.entry).timestamp :
+                                   Instant.EPOCH;
+                    Instant bTime = b.entry instanceof LogStorage.LogEntry ? ((LogStorage.LogEntry)b.entry).timestamp :
+                                   b.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)b.entry).timestamp :
+                                   b.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)b.entry).timestamp :
+                                   b.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)b.entry).timestamp :
+                                   Instant.EPOCH;
+                    return bTime.compareTo(aTime);
+                });
+
+                return flatList;
+            } catch (Exception e) {
+                throw new RuntimeException("Error executing lookup", e);
+            }
+        }).thenAccept(flatList -> {
+            // Store query context for pagination
+            QueryContext queryContext = new QueryContext(flatList, arg, source.getPlayer().getBlockPos());
+            lastQueries.put(source.getPlayer().getUuid(), queryContext);
+
+            // Display first page
+            displayPage(source, flatList, 1, queryContext.entriesPerPage);
+        }).exceptionally(throwable -> {
+            source.sendError(Text.literal("Error performing lookup: " + throwable.getMessage()));
+            return null;
         });
-
-        // Store query context for pagination
-        QueryContext queryContext = new QueryContext(flatList, arg, playerPos);
-        lastQueries.put(source.getPlayer().getUuid(), queryContext);
-
-        // Display first page
-        displayPage(source, flatList, 1, queryContext.entriesPerPage);
 
         return Command.SINGLE_SUCCESS;
     }
