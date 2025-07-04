@@ -51,7 +51,12 @@ public class MineTracerCommand {
                             .executes(MineTracerCommand::toggleInspector))
                     .then(CommandManager.literal("save")
                             .requires(source -> Permissions.check(source, "minetracer.command.save", 2))
-                            .executes(MineTracerCommand::forceSave)));
+                            .executes(MineTracerCommand::save))
+                    .executes(context -> {
+                        ServerCommandSource source = context.getSource();
+                        source.sendError(Text.literal("Invalid command usage. Use /minetracer <lookup|rollback|page|inspector|save>"));
+                        return 0;
+                    }));
         });
     }
 
@@ -100,8 +105,22 @@ public class MineTracerCommand {
             String userPart = currentTyping.substring(5);
             String beforeCurrent = remaining.substring(0, remaining.lastIndexOf(currentTyping));
 
+            // Get all player names from both online players and logs
+            java.util.Set<String> allPlayerNames = new java.util.HashSet<>();
+            
+            // Add online players
             for (ServerPlayerEntity player : ctx.getSource().getServer().getPlayerManager().getPlayerList()) {
-                String playerName = player.getName().getString();
+                allPlayerNames.add(player.getName().getString());
+            }
+            
+            // Add all players from logs (including offline players)
+            try {
+                allPlayerNames.addAll(LogStorage.getAllPlayerNames());
+            } catch (Exception e) {
+                // If we can't get log player names, just use online players
+            }
+            
+            for (String playerName : allPlayerNames) {
                 if (playerName.toLowerCase().startsWith(userPart.toLowerCase())) {
                     builder.suggest(beforeCurrent + "user:" + playerName);
                 }
@@ -256,14 +275,6 @@ public class MineTracerCommand {
             return 0;
         }
 
-        // Automatically save logs before lookup to ensure data is up to date
-        try {
-            LogStorage.forceSave();
-        } catch (Exception e) {
-            source.sendError(Text.literal("Error saving log data before lookup: " + e.getMessage()));
-            return 0;
-        }
-
         String arg = StringArgumentType.getString(ctx, "arg");
 
         // Parse filters asynchronously for better performance
@@ -311,19 +322,53 @@ public class MineTracerCommand {
                 cutoff = Instant.now().minusSeconds(seconds);
             }
 
-            // Execute all queries in parallel
-            CompletableFuture<List<LogStorage.BlockLogEntry>> blockLogsFuture = LogStorage
-                    .getBlockLogsInRangeAsync(playerPos, range, userFilter);
+            // Validate lookup restrictions - require at least 2 of: range, time, user
+            boolean hasRange = range != 100; // 100 is the default, so anything else means range was specified
+            boolean hasTime = timeArg != null;
+            boolean hasUser = userFilter != null;
 
-            CompletableFuture<List<LogStorage.SignLogEntry>> signLogsFuture = LogStorage
-                    .getSignLogsInRangeAsync(playerPos, range, userFilter);
+            int restrictionCount = (hasRange ? 1 : 0) + (hasTime ? 1 : 0) + (hasUser ? 1 : 0);
+            if (restrictionCount < 2) {
+                source.sendError(Text.literal(
+                        "Lookup requires at least 2 of these filters: range:<blocks>, time:<duration>, user:<player>. Examples: 'range:50 user:PlayerName' or 'time:1h user:PlayerName' or 'range:20 time:30m'"));
+                return null;
+            }
 
-            CompletableFuture<List<LogStorage.LogEntry>> containerLogsFuture = LogStorage.getLogsInRangeAsync(playerPos,
-                    range);
+            // For user-specific lookups, use global search if no specific range is provided
+            BlockPos searchCenter = playerPos;
+            int searchRange = range;
+            
+            // If user is specified but no custom range, search globally
+            if (hasUser && !hasRange) {
+                searchRange = 50000; // Very large range for global search
+            }
 
             boolean filterByKiller = actionFilters.contains("kill");
-            CompletableFuture<List<LogStorage.KillLogEntry>> killLogsFuture = LogStorage
-                    .getKillLogsInRangeAsync(playerPos, range, userFilter, filterByKiller);
+
+            // Debug output
+            System.out.println("[DEBUG] Lookup command - hasUser: " + hasUser + ", hasRange: " + hasRange + ", hasTime: " + hasTime);
+            System.out.println("[DEBUG] userFilter: " + userFilter + ", range: " + range + ", timeArg: " + timeArg);
+            System.out.println("[DEBUG] Using global search: " + (hasUser && !hasRange));
+            
+            // Execute queries - use global search for user-specific lookups
+            CompletableFuture<List<LogStorage.BlockLogEntry>> blockLogsFuture;
+            CompletableFuture<List<LogStorage.SignLogEntry>> signLogsFuture;
+            CompletableFuture<List<LogStorage.LogEntry>> containerLogsFuture;
+            CompletableFuture<List<LogStorage.KillLogEntry>> killLogsFuture;
+
+            // If user is specified but no custom range, do global search
+            if (hasUser && !hasRange) {
+                blockLogsFuture = LogStorage.getBlockLogsForUserAsync(userFilter);
+                signLogsFuture = LogStorage.getSignLogsForUserAsync(userFilter);
+                containerLogsFuture = LogStorage.getContainerLogsForUserAsync(userFilter);
+                killLogsFuture = LogStorage.getKillLogsForUserAsync(userFilter, filterByKiller);
+            } else {
+                // Use range-based search
+                blockLogsFuture = LogStorage.getBlockLogsInRangeAsync(playerPos, range, userFilter);
+                signLogsFuture = LogStorage.getSignLogsInRangeAsync(playerPos, range, userFilter);
+                containerLogsFuture = LogStorage.getLogsInRangeAsync(playerPos, range);
+                killLogsFuture = LogStorage.getKillLogsInRangeAsync(playerPos, range, userFilter, filterByKiller);
+            }
 
             try {
                 List<LogStorage.BlockLogEntry> blockLogs = blockLogsFuture.get();
@@ -331,8 +376,8 @@ public class MineTracerCommand {
                 List<LogStorage.LogEntry> containerLogs = containerLogsFuture.get();
                 List<LogStorage.KillLogEntry> killLogs = killLogsFuture.get();
 
-                // Apply user filter to container logs
-                if (userFilter != null) {
+                // Apply user filter to container logs (only needed for range-based search)
+                if (userFilter != null && !(hasUser && !hasRange)) {
                     final String userFilterFinal = userFilter;
                     containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
                 }
@@ -563,14 +608,6 @@ public class MineTracerCommand {
         ServerCommandSource source = ctx.getSource();
         if (!Permissions.check(source, "minetracer.command.rollback", 2)) {
             source.sendError(Text.literal("You do not have permission to use this command."));
-            return 0;
-        }
-
-        // Automatically save logs before rollback to ensure data is up to date
-        try {
-            LogStorage.forceSave();
-        } catch (Exception e) {
-            source.sendError(Text.literal("Error saving log data before rollback: " + e.getMessage()));
             return 0;
         }
 
@@ -1068,7 +1105,7 @@ public class MineTracerCommand {
         return Command.SINGLE_SUCCESS;
     }
 
-    public static int forceSave(CommandContext<ServerCommandSource> ctx) {
+    public static int save(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
         if (!Permissions.check(source, "minetracer.command.save", 2)) {
             source.sendError(Text.literal("You do not have permission to use this command."));

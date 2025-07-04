@@ -151,9 +151,6 @@ public class MixinServerPlayerInteractionManager {
             return;
         }
 
-        System.out
-                .println("[MineTracer] Logging block break: " + state.getBlock().getName().getString() + " at " + pos);
-
         // Use async logging to avoid blocking the main thread
         CompletableFuture.runAsync(() -> {
             try {

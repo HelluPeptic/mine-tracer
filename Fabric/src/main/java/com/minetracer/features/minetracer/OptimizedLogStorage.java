@@ -127,6 +127,7 @@ public class OptimizedLogStorage {
     private static final Object saveLock = new Object();
     private static volatile boolean hasUnsavedChanges = false;
     private static volatile boolean isShuttingDown = false;
+    private static volatile boolean logsLoaded = false;
 
     // Thread pools for different operations
     private static ScheduledExecutorService saveScheduler;
@@ -158,8 +159,8 @@ public class OptimizedLogStorage {
     static {
         // Initialize caches and thread pools
         queryCache = com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
-                .maximumSize(1000)
-                .expireAfterWrite(5, TimeUnit.MINUTES)
+                .maximumSize(5000)
+                .expireAfterWrite(10, TimeUnit.MINUTES)
                 .build();
 
         queryExecutor = ForkJoinPool.commonPool();
@@ -235,6 +236,8 @@ public class OptimizedLogStorage {
         return CompletableFuture.runAsync(() -> {
             dataLock.writeLock().lock();
             try {
+                logsLoaded = false; // Reset flag before loading
+                
                 // Clear all data structures
                 logs.clear();
                 blockLogs.clear();
@@ -338,9 +341,7 @@ public class OptimizedLogStorage {
                     }
                 }
                 hasUnsavedChanges = false;
-                System.out.println("[MineTracer] Loaded " +
-                        (logs.size() + blockLogs.size() + signLogs.size() + killLogs.size()) +
-                        " log entries from disk with spatial indexing");
+                logsLoaded = true;
             } catch (Exception e) {
                 System.err.println("[MineTracer] Failed to load logs: " + e.getMessage());
                 e.printStackTrace();
@@ -408,16 +409,18 @@ public class OptimizedLogStorage {
         logContainerAction(action, player, BlockPos.ORIGIN, stack);
     }
 
-    // High-performance range queries using spatial indexing
+    // High-performance range queries with explicit range validation
     public static CompletableFuture<List<BlockLogEntry>> getBlockLogsInRangeAsync(BlockPos center, int range,
             String userFilter) {
-        String cacheKey = "block_" + center + "_" + range + "_" + userFilter;
-        List<BlockLogEntry> cached = (List<BlockLogEntry>) queryCache.getIfPresent(cacheKey);
-        if (cached != null) {
-            return CompletableFuture.completedFuture(cached);
-        }
-
         return CompletableFuture.supplyAsync(() -> {
+            ensureLogsLoaded(); // Ensure logs are loaded before querying
+            
+            String cacheKey = "block_" + center + "_" + range + "_" + userFilter;
+            List<BlockLogEntry> cached = (List<BlockLogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+
             dataLock.readLock().lock();
             try {
                 List<BlockLogEntry> result = new ArrayList<>();
@@ -454,13 +457,15 @@ public class OptimizedLogStorage {
 
     public static CompletableFuture<List<SignLogEntry>> getSignLogsInRangeAsync(BlockPos center, int range,
             String userFilter) {
-        String cacheKey = "sign_" + center + "_" + range + "_" + userFilter;
-        List<SignLogEntry> cached = (List<SignLogEntry>) queryCache.getIfPresent(cacheKey);
-        if (cached != null) {
-            return CompletableFuture.completedFuture(cached);
-        }
-
         return CompletableFuture.supplyAsync(() -> {
+            ensureLogsLoaded(); // Ensure logs are loaded before querying
+            
+            String cacheKey = "sign_" + center + "_" + range + "_" + userFilter;
+            List<SignLogEntry> cached = (List<SignLogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+
             dataLock.readLock().lock();
             try {
                 List<SignLogEntry> result = new ArrayList<>();
@@ -496,13 +501,15 @@ public class OptimizedLogStorage {
 
     public static CompletableFuture<List<KillLogEntry>> getKillLogsInRangeAsync(BlockPos center, int range,
             String userFilter, boolean filterByKiller) {
-        String cacheKey = "kill_" + center + "_" + range + "_" + userFilter + "_" + filterByKiller;
-        List<KillLogEntry> cached = (List<KillLogEntry>) queryCache.getIfPresent(cacheKey);
-        if (cached != null) {
-            return CompletableFuture.completedFuture(cached);
-        }
-
         return CompletableFuture.supplyAsync(() -> {
+            ensureLogsLoaded(); // Ensure logs are loaded before querying
+            
+            String cacheKey = "kill_" + center + "_" + range + "_" + userFilter + "_" + filterByKiller;
+            List<KillLogEntry> cached = (List<KillLogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+
             dataLock.readLock().lock();
             try {
                 List<KillLogEntry> result = new ArrayList<>();
@@ -544,13 +551,15 @@ public class OptimizedLogStorage {
     }
 
     public static CompletableFuture<List<LogEntry>> getLogsInRangeAsync(BlockPos center, int range) {
-        String cacheKey = "container_" + center + "_" + range;
-        List<LogEntry> cached = (List<LogEntry>) queryCache.getIfPresent(cacheKey);
-        if (cached != null) {
-            return CompletableFuture.completedFuture(cached);
-        }
-
         return CompletableFuture.supplyAsync(() -> {
+            ensureLogsLoaded(); // Ensure logs are loaded before querying
+            
+            String cacheKey = "container_" + center + "_" + range;
+            List<LogEntry> cached = (List<LogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+
             dataLock.readLock().lock();
             try {
                 List<LogEntry> result = new ArrayList<>();
@@ -570,6 +579,136 @@ public class OptimizedLogStorage {
                                     result.add(entry);
                                 }
                             }
+                        }
+                    }
+                }
+
+                queryCache.put(cacheKey, result);
+                return result;
+            } finally {
+                dataLock.readLock().unlock();
+            }
+        }, queryExecutor);
+    }
+
+    // Global search methods for user-specific lookups (no range restriction)
+    public static CompletableFuture<List<BlockLogEntry>> getBlockLogsForUserAsync(String userFilter) {
+        return CompletableFuture.supplyAsync(() -> {
+            if (userFilter == null || userFilter.isEmpty()) {
+                return new ArrayList<>();
+            }
+            
+            System.out.println("[DEBUG] getBlockLogsForUserAsync called with userFilter: " + userFilter);
+            
+            String cacheKey = "block_user_" + userFilter;
+            List<BlockLogEntry> cached = (List<BlockLogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+
+            dataLock.readLock().lock();
+            try {
+                List<BlockLogEntry> result = new ArrayList<>();
+                List<BlockLogEntry> userEntries = playerBlockLogs.get(userFilter);
+                if (userEntries != null) {
+                    result.addAll(userEntries);
+                }
+
+                queryCache.put(cacheKey, result);
+                return result;
+            } finally {
+                dataLock.readLock().unlock();
+            }
+        }, queryExecutor);
+    }
+
+    public static CompletableFuture<List<SignLogEntry>> getSignLogsForUserAsync(String userFilter) {
+        return CompletableFuture.supplyAsync(() -> {
+            ensureLogsLoaded(); // Ensure logs are loaded before querying
+            
+            if (userFilter == null || userFilter.isEmpty()) {
+                return new ArrayList<>();
+            }
+            
+            String cacheKey = "sign_user_" + userFilter;
+            List<SignLogEntry> cached = (List<SignLogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+
+            dataLock.readLock().lock();
+            try {
+                List<SignLogEntry> result = new ArrayList<>();
+                List<SignLogEntry> userEntries = playerSignLogs.get(userFilter);
+                if (userEntries != null) {
+                    result.addAll(userEntries);
+                }
+
+                queryCache.put(cacheKey, result);
+                return result;
+            } finally {
+                dataLock.readLock().unlock();
+            }
+        }, queryExecutor);
+    }
+
+    public static CompletableFuture<List<LogEntry>> getContainerLogsForUserAsync(String userFilter) {
+        return CompletableFuture.supplyAsync(() -> {
+            ensureLogsLoaded(); // Ensure logs are loaded before querying
+            
+            if (userFilter == null || userFilter.isEmpty()) {
+                return new ArrayList<>();
+            }
+            
+            String cacheKey = "container_user_" + userFilter;
+            List<LogEntry> cached = (List<LogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+
+            dataLock.readLock().lock();
+            try {
+                List<LogEntry> result = new ArrayList<>();
+                List<LogEntry> userEntries = playerContainerLogs.get(userFilter);
+                if (userEntries != null) {
+                    result.addAll(userEntries);
+                }
+
+                queryCache.put(cacheKey, result);
+                return result;
+            } finally {
+                dataLock.readLock().unlock();
+            }
+        }, queryExecutor);
+    }
+
+    public static CompletableFuture<List<KillLogEntry>> getKillLogsForUserAsync(String userFilter, boolean filterByKiller) {
+        return CompletableFuture.supplyAsync(() -> {
+            ensureLogsLoaded(); // Ensure logs are loaded before querying
+            
+            if (userFilter == null || userFilter.isEmpty()) {
+                return new ArrayList<>();
+            }
+            
+            String cacheKey = "kill_user_" + userFilter + "_" + filterByKiller;
+            List<KillLogEntry> cached = (List<KillLogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+
+            dataLock.readLock().lock();
+            try {
+                List<KillLogEntry> result = new ArrayList<>();
+                if (filterByKiller) {
+                    List<KillLogEntry> userEntries = playerKillLogs.get(userFilter);
+                    if (userEntries != null) {
+                        result.addAll(userEntries);
+                    }
+                } else {
+                    // Search through all kill logs for victim name
+                    for (KillLogEntry entry : killLogs) {
+                        if (entry.victimName.equalsIgnoreCase(userFilter)) {
+                            result.add(entry);
                         }
                     }
                 }
@@ -625,6 +764,8 @@ public class OptimizedLogStorage {
     }
 
     public static List<String> getAllPlayerNames() {
+        ensureLogsLoaded(); // Ensure logs are loaded before querying
+        
         dataLock.readLock().lock();
         try {
             java.util.Set<String> names = new java.util.HashSet<>();
@@ -639,6 +780,7 @@ public class OptimizedLogStorage {
     }
 
     private static void invalidateQueryCache() {
+        // Only invalidate cache when new data is added, not on every query
         queryCache.invalidateAll();
     }
 
@@ -710,12 +852,6 @@ public class OptimizedLogStorage {
                     String json = GSON.toJson(allLogs);
                     Files.writeString(LOG_FILE, json, StandardCharsets.UTF_8);
                     hasUnsavedChanges = false;
-
-                    if (!isShuttingDown) {
-                        System.out.println("[MineTracer] Saved " +
-                                (logs.size() + blockLogs.size() + signLogs.size() + killLogs.size()) +
-                                " log entries to disk");
-                    }
                 } catch (Exception e) {
                     System.err.println("[MineTracer] Failed to save logs: " + e.getMessage());
                     e.printStackTrace();
@@ -807,11 +943,14 @@ public class OptimizedLogStorage {
     public static void registerServerLifecycle() {
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(server -> {
             try {
+                // Ensure logs are loaded synchronously during server startup
                 loadAllLogsAsync().get(); // Wait for loading to complete
+                System.out.println("[MineTracer] Logs loaded successfully during server startup");
                 startPeriodicSaving();
                 com.minetracer.features.minetracer.KillLogger.register();
             } catch (Exception e) {
                 System.err.println("[MineTracer] Error during server startup: " + e.getMessage());
+                e.printStackTrace();
             }
         });
 
@@ -840,12 +979,12 @@ public class OptimizedLogStorage {
                 return t;
             });
 
-            // Save every 30 seconds if there are unsaved changes
+            // Save every 2 minutes if there are unsaved changes
             saveScheduler.scheduleWithFixedDelay(() -> {
                 if (hasUnsavedChanges && !isShuttingDown) {
                     saveAllLogsAsync();
                 }
-            }, 30, 30, TimeUnit.SECONDS);
+            }, 120, 120, TimeUnit.SECONDS);
         }
     }
 
@@ -860,6 +999,21 @@ public class OptimizedLogStorage {
             } catch (InterruptedException e) {
                 saveScheduler.shutdownNow();
                 Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    // Public method to ensure logs are loaded (for command execution)
+    public static void ensureLogsLoaded() {
+        if (!logsLoaded) {
+            synchronized (saveLock) {
+                if (!logsLoaded) {
+                    try {
+                        loadAllLogsAsync().get(); // Wait for loading to complete
+                    } catch (Exception e) {
+                        System.err.println("[MineTracer] Error ensuring logs are loaded: " + e.getMessage());
+                    }
+                }
             }
         }
     }
