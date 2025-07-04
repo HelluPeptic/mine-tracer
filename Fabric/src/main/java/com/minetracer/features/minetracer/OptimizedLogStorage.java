@@ -609,12 +609,16 @@ public class OptimizedLogStorage {
             dataLock.readLock().lock();
             try {
                 List<BlockLogEntry> result = new ArrayList<>();
-                List<BlockLogEntry> userEntries = playerBlockLogs.get(userFilter);
-                System.out.println("[DEBUG] playerBlockLogs.get(" + userFilter + ") returned: " + (userEntries != null ? userEntries.size() : "null") + " entries");
-                if (userEntries != null) {
-                    result.addAll(userEntries);
+                
+                // Case-insensitive lookup - search through all player entries
+                for (Map.Entry<String, List<BlockLogEntry>> playerEntry : playerBlockLogs.entrySet()) {
+                    if (playerEntry.getKey().equalsIgnoreCase(userFilter)) {
+                        result.addAll(playerEntry.getValue());
+                        break; // Found the player, no need to continue
+                    }
                 }
-                System.out.println("[DEBUG] getBlockLogsForUserAsync returning " + result.size() + " entries");
+                
+                System.out.println("[DEBUG] Case-insensitive lookup found " + result.size() + " block log entries for user: " + userFilter);
 
                 queryCache.put(cacheKey, result);
                 return result;
@@ -641,9 +645,13 @@ public class OptimizedLogStorage {
             dataLock.readLock().lock();
             try {
                 List<SignLogEntry> result = new ArrayList<>();
-                List<SignLogEntry> userEntries = playerSignLogs.get(userFilter);
-                if (userEntries != null) {
-                    result.addAll(userEntries);
+                
+                // Case-insensitive lookup - search through all player entries
+                for (Map.Entry<String, List<SignLogEntry>> playerEntry : playerSignLogs.entrySet()) {
+                    if (playerEntry.getKey().equalsIgnoreCase(userFilter)) {
+                        result.addAll(playerEntry.getValue());
+                        break; // Found the player, no need to continue
+                    }
                 }
 
                 queryCache.put(cacheKey, result);
@@ -671,12 +679,16 @@ public class OptimizedLogStorage {
             dataLock.readLock().lock();
             try {
                 List<LogEntry> result = new ArrayList<>();
-                List<LogEntry> userEntries = playerContainerLogs.get(userFilter);
-                System.out.println("[DEBUG] playerContainerLogs.get(" + userFilter + ") returned: " + (userEntries != null ? userEntries.size() : "null") + " entries");
-                if (userEntries != null) {
-                    result.addAll(userEntries);
+                
+                // Case-insensitive lookup - search through all player entries
+                for (Map.Entry<String, List<LogEntry>> playerEntry : playerContainerLogs.entrySet()) {
+                    if (playerEntry.getKey().equalsIgnoreCase(userFilter)) {
+                        result.addAll(playerEntry.getValue());
+                        break; // Found the player, no need to continue
+                    }
                 }
-                System.out.println("[DEBUG] getContainerLogsForUserAsync returning " + result.size() + " entries");
+                
+                System.out.println("[DEBUG] Case-insensitive lookup found " + result.size() + " container log entries for user: " + userFilter);
 
                 queryCache.put(cacheKey, result);
                 return result;
@@ -704,12 +716,15 @@ public class OptimizedLogStorage {
             try {
                 List<KillLogEntry> result = new ArrayList<>();
                 if (filterByKiller) {
-                    List<KillLogEntry> userEntries = playerKillLogs.get(userFilter);
-                    if (userEntries != null) {
-                        result.addAll(userEntries);
+                    // Case-insensitive lookup for killer
+                    for (Map.Entry<String, List<KillLogEntry>> playerEntry : playerKillLogs.entrySet()) {
+                        if (playerEntry.getKey().equalsIgnoreCase(userFilter)) {
+                            result.addAll(playerEntry.getValue());
+                            break; // Found the player, no need to continue
+                        }
                     }
                 } else {
-                    // Search through all kill logs for victim name
+                    // Search through all kill logs for victim name (case-insensitive)
                     for (KillLogEntry entry : killLogs) {
                         if (entry.victimName.equalsIgnoreCase(userFilter)) {
                             result.add(entry);
