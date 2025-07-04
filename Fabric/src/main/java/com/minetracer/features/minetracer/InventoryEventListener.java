@@ -1,4 +1,4 @@
-package com.flowframe.features.minetracer;
+package com.minetracer.features.minetracer;
 
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;

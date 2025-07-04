@@ -1,4 +1,4 @@
-package com.flowframe.features.minetracer;
+package com.minetracer.features.minetracer;
 
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityCombatEvents;
 import net.minecraft.entity.LivingEntity;
@@ -11,7 +11,8 @@ import net.minecraft.world.World;
 public class KillEventListener {
     public static void register() {
         ServerEntityCombatEvents.AFTER_KILLED_OTHER_ENTITY.register((world, entity, killedEntity) -> {
-            if (!(entity instanceof LivingEntity killer)) return;
+            if (!(entity instanceof LivingEntity killer))
+                return;
             String killerName = killer.getName().getString();
             String victimName = killedEntity.getName().getString();
             BlockPos pos = killedEntity.getBlockPos();

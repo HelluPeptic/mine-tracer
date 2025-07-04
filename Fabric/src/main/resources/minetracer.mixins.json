@@ -1,6 +1,6 @@
 {
   "required": true,
-  "package": "com.flowframe.mixin",
+  "package": "com.minetracer.mixin",
   "compatibilityLevel": "JAVA_17",
   "mixins": [
     "MixinScreenHandler",

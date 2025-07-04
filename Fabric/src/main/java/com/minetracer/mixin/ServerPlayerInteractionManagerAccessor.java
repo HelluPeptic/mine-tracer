@@ -1,4 +1,4 @@
-package com.flowframe.mixin;
+package com.minetracer.mixin;
 
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.network.ServerPlayerInteractionManager;

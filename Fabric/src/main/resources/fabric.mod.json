@@ -11,7 +11,7 @@
   "icon": "icon.png",
 
   "environment": "*",
-  "entrypoints": { "main": [ "com.flowframe.FlowframeMod" ] },
+  "entrypoints": { "main": [ "com.minetracer.MineTracerMod" ] },
 
   "mixins": [
     "minetracer.mixins.json"

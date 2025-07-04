@@ -1,4 +1,4 @@
-package com.flowframe.features.minetracer;
+package com.minetracer.features.minetracer;
 
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;

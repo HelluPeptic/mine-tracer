@@ -1,4 +1,4 @@
-package com.flowframe.mixin;
+package com.minetracer.mixin;
 
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.slot.Slot;
@@ -9,37 +9,40 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import com.flowframe.features.minetracer.LogStorage;
+import com.minetracer.features.minetracer.LogStorage;
 
 import java.util.Objects;
 
 @Mixin(ScreenHandler.class)
 public abstract class MixinScreenHandler {
     // Store the previous stack for slot click detection
-    private ItemStack flowframe$prevStack = null;
+    private ItemStack minetracer$prevStack = null;
     // Store the previous state of the entire container
-    private ItemStack[] flowframe$prevContainerState = null;
+    private ItemStack[] minetracer$prevContainerState = null;
 
     @Inject(method = "onSlotClick", at = @At("HEAD"))
-    private void flowframe$logSlotClickHead(int slotIndex, int button, net.minecraft.screen.slot.SlotActionType actionType, PlayerEntity player, CallbackInfo ci) {
-        ScreenHandler self = (ScreenHandler)(Object)this;
+    private void minetracer$logSlotClickHead(int slotIndex, int button,
+            net.minecraft.screen.slot.SlotActionType actionType, PlayerEntity player, CallbackInfo ci) {
+        ScreenHandler self = (ScreenHandler) (Object) this;
         // Only track if interacting with a container (not player inventory)
         if (self != null && self.slots.size() > 0 && self.getSlot(0).inventory != player.getInventory()) {
             int size = self.slots.size();
-            flowframe$prevContainerState = new ItemStack[size];
+            minetracer$prevContainerState = new ItemStack[size];
             for (int i = 0; i < size; i++) {
                 Slot slot = self.getSlot(i);
-                flowframe$prevContainerState[i] = slot.getStack().copy();
+                minetracer$prevContainerState[i] = slot.getStack().copy();
             }
         } else {
-            flowframe$prevContainerState = null;
+            minetracer$prevContainerState = null;
         }
     }
 
     @Inject(method = "onSlotClick", at = @At("RETURN"))
-    private void flowframe$logSlotClickReturn(int slotIndex, int button, net.minecraft.screen.slot.SlotActionType actionType, PlayerEntity player, CallbackInfo ci) {
-        ScreenHandler self = (ScreenHandler)(Object)this;
-        if (flowframe$prevContainerState != null && self != null && self.slots.size() == flowframe$prevContainerState.length) {
+    private void minetracer$logSlotClickReturn(int slotIndex, int button,
+            net.minecraft.screen.slot.SlotActionType actionType, PlayerEntity player, CallbackInfo ci) {
+        ScreenHandler self = (ScreenHandler) (Object) this;
+        if (minetracer$prevContainerState != null && self != null
+                && self.slots.size() == minetracer$prevContainerState.length) {
             for (int i = 0; i < self.slots.size(); i++) {
                 Slot slot = self.getSlot(i);
                 // Only log if this slot belongs to the container, not the player inventory
@@ -53,9 +56,10 @@ public abstract class MixinScreenHandler {
                 } else {
                     pos = player.getBlockPos(); // fallback, but should rarely happen
                 }
-                ItemStack before = flowframe$prevContainerState[i];
+                ItemStack before = minetracer$prevContainerState[i];
                 ItemStack after = slot.getStack();
-                boolean sameItem = ItemStack.areItemsEqual(before, after) && Objects.equals(before.getNbt(), after.getNbt());
+                boolean sameItem = ItemStack.areItemsEqual(before, after)
+                        && Objects.equals(before.getNbt(), after.getNbt());
                 int diff = after.getCount() - before.getCount();
                 if (sameItem && diff > 0) {
                     ItemStack deposited = after.copy();
@@ -80,6 +84,6 @@ public abstract class MixinScreenHandler {
                 }
             }
         }
-        flowframe$prevContainerState = null;
+        minetracer$prevContainerState = null;
     }
 }

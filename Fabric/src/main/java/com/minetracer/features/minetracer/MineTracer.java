@@ -1,4 +1,4 @@
-package com.flowframe.features.minetracer;
+package com.minetracer.features.minetracer;
 
 // Entry point for the MineTracer module
 public class MineTracer {

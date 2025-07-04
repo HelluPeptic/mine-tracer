@@ -19,6 +19,7 @@ Advanced block and container logging mod with rollback functionality for Minecra
 - `/minetracer rollback <filters>` - Rollback player actions
 - `/minetracer page <number>` - Navigate lookup results
 - `/minetracer inspector` - Toggle inspector mode
+- `/minetracer save` - Force save all log data to disk
 
 ## Filters
 
@@ -34,6 +35,7 @@ Advanced block and container logging mod with rollback functionality for Minecra
 - `minetracer.command.rollback` - Access to rollback command
 - `minetracer.command.inspector` - Access to inspector mode
 - `minetracer.command.page` - Access to pagination
+- `minetracer.command.save` - Access to save command
 
 ## Installation
 

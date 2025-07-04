@@ -1,4 +1,4 @@
-package com.flowframe.features.minetracer;
+package com.minetracer.features.minetracer;
 
 // KillLogger is now unused; kill logging is handled by a mixin on ServerPlayerEntity#onDeath.
 public class KillLogger {
