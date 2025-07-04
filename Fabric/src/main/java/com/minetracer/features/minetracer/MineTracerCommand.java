@@ -345,11 +345,6 @@ public class MineTracerCommand {
 
             boolean filterByKiller = actionFilters.contains("kill");
 
-            // Debug output
-            System.out.println("[DEBUG] Lookup command - hasUser: " + hasUser + ", hasRange: " + hasRange + ", hasTime: " + hasTime);
-            System.out.println("[DEBUG] userFilter: " + userFilter + ", range: " + range + ", timeArg: " + timeArg);
-            System.out.println("[DEBUG] Using global search: " + (hasUser && !hasRange));
-            
             // Execute queries - use global search for user-specific lookups
             CompletableFuture<List<LogStorage.BlockLogEntry>> blockLogsFuture;
             CompletableFuture<List<LogStorage.SignLogEntry>> signLogsFuture;
@@ -385,15 +380,10 @@ public class MineTracerCommand {
                 // Apply time filter
                 if (cutoff != null) {
                     final Instant cutoffFinal = cutoff;
-                    System.out.println("[DEBUG] Applying time filter. Cutoff: " + cutoffFinal);
-                    System.out.println("[DEBUG] Before time filter - blockLogs: " + blockLogs.size() + ", containerLogs: " + containerLogs.size() + ", signLogs: " + signLogs.size() + ", killLogs: " + killLogs.size());
-                    
                     blockLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
                     signLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
                     containerLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
                     killLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
-                    
-                    System.out.println("[DEBUG] After time filter - blockLogs: " + blockLogs.size() + ", containerLogs: " + containerLogs.size() + ", signLogs: " + signLogs.size() + ", killLogs: " + killLogs.size());
                 }
 
                 // Filter by action if specified
@@ -1134,22 +1124,18 @@ public class MineTracerCommand {
 
     private static long parseTimeArg(String timeArg) {
         try {
-            long result;
             if (timeArg.endsWith("s")) {
-                result = Long.parseLong(timeArg.substring(0, timeArg.length() - 1));
+                return Long.parseLong(timeArg.substring(0, timeArg.length() - 1));
             } else if (timeArg.endsWith("m")) {
-                result = Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 60;
+                return Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 60;
             } else if (timeArg.endsWith("h")) {
-                result = Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 3600;
+                return Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 3600;
             } else if (timeArg.endsWith("d")) {
-                result = Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 86400;
+                return Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 86400;
             } else {
-                result = Long.parseLong(timeArg);
+                return Long.parseLong(timeArg);
             }
-            System.out.println("[DEBUG] parseTimeArg('" + timeArg + "') -> " + result + " seconds");
-            return result;
         } catch (NumberFormatException e) {
-            System.out.println("[DEBUG] parseTimeArg('" + timeArg + "') -> failed to parse, defaulting to 3600");
             return 3600; // Default to 1 hour
         }
     }

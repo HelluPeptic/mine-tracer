@@ -598,8 +598,6 @@ public class OptimizedLogStorage {
                 return new ArrayList<>();
             }
             
-            System.out.println("[DEBUG] getBlockLogsForUserAsync called with userFilter: " + userFilter);
-            
             String cacheKey = "block_user_" + userFilter;
             List<BlockLogEntry> cached = (List<BlockLogEntry>) queryCache.getIfPresent(cacheKey);
             if (cached != null) {
@@ -617,8 +615,6 @@ public class OptimizedLogStorage {
                         break; // Found the player, no need to continue
                     }
                 }
-                
-                System.out.println("[DEBUG] Case-insensitive lookup found " + result.size() + " block log entries for user: " + userFilter);
 
                 queryCache.put(cacheKey, result);
                 return result;
@@ -668,8 +664,6 @@ public class OptimizedLogStorage {
                 return new ArrayList<>();
             }
             
-            System.out.println("[DEBUG] getContainerLogsForUserAsync called with userFilter: " + userFilter);
-            
             String cacheKey = "container_user_" + userFilter;
             List<LogEntry> cached = (List<LogEntry>) queryCache.getIfPresent(cacheKey);
             if (cached != null) {
@@ -687,8 +681,6 @@ public class OptimizedLogStorage {
                         break; // Found the player, no need to continue
                     }
                 }
-                
-                System.out.println("[DEBUG] Case-insensitive lookup found " + result.size() + " container log entries for user: " + userFilter);
 
                 queryCache.put(cacheKey, result);
                 return result;
@@ -792,8 +784,6 @@ public class OptimizedLogStorage {
             names.addAll(playerBlockLogs.keySet());
             names.addAll(playerSignLogs.keySet());
             names.addAll(playerKillLogs.keySet());
-            
-            System.out.println("[DEBUG] getAllPlayerNames returning: " + names);
             
             return new java.util.ArrayList<>(names);
         } finally {
