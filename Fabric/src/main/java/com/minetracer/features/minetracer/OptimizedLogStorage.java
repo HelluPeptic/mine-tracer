@@ -610,9 +610,11 @@ public class OptimizedLogStorage {
             try {
                 List<BlockLogEntry> result = new ArrayList<>();
                 List<BlockLogEntry> userEntries = playerBlockLogs.get(userFilter);
+                System.out.println("[DEBUG] playerBlockLogs.get(" + userFilter + ") returned: " + (userEntries != null ? userEntries.size() : "null") + " entries");
                 if (userEntries != null) {
                     result.addAll(userEntries);
                 }
+                System.out.println("[DEBUG] getBlockLogsForUserAsync returning " + result.size() + " entries");
 
                 queryCache.put(cacheKey, result);
                 return result;
@@ -654,11 +656,11 @@ public class OptimizedLogStorage {
 
     public static CompletableFuture<List<LogEntry>> getContainerLogsForUserAsync(String userFilter) {
         return CompletableFuture.supplyAsync(() -> {
-            ensureLogsLoaded(); // Ensure logs are loaded before querying
-            
             if (userFilter == null || userFilter.isEmpty()) {
                 return new ArrayList<>();
             }
+            
+            System.out.println("[DEBUG] getContainerLogsForUserAsync called with userFilter: " + userFilter);
             
             String cacheKey = "container_user_" + userFilter;
             List<LogEntry> cached = (List<LogEntry>) queryCache.getIfPresent(cacheKey);
@@ -670,9 +672,11 @@ public class OptimizedLogStorage {
             try {
                 List<LogEntry> result = new ArrayList<>();
                 List<LogEntry> userEntries = playerContainerLogs.get(userFilter);
+                System.out.println("[DEBUG] playerContainerLogs.get(" + userFilter + ") returned: " + (userEntries != null ? userEntries.size() : "null") + " entries");
                 if (userEntries != null) {
                     result.addAll(userEntries);
                 }
+                System.out.println("[DEBUG] getContainerLogsForUserAsync returning " + result.size() + " entries");
 
                 queryCache.put(cacheKey, result);
                 return result;
@@ -773,6 +777,9 @@ public class OptimizedLogStorage {
             names.addAll(playerBlockLogs.keySet());
             names.addAll(playerSignLogs.keySet());
             names.addAll(playerKillLogs.keySet());
+            
+            System.out.println("[DEBUG] getAllPlayerNames returning: " + names);
+            
             return new java.util.ArrayList<>(names);
         } finally {
             dataLock.readLock().unlock();

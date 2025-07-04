@@ -385,10 +385,15 @@ public class MineTracerCommand {
                 // Apply time filter
                 if (cutoff != null) {
                     final Instant cutoffFinal = cutoff;
+                    System.out.println("[DEBUG] Applying time filter. Cutoff: " + cutoffFinal);
+                    System.out.println("[DEBUG] Before time filter - blockLogs: " + blockLogs.size() + ", containerLogs: " + containerLogs.size() + ", signLogs: " + signLogs.size() + ", killLogs: " + killLogs.size());
+                    
                     blockLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
                     signLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
                     containerLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
                     killLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+                    
+                    System.out.println("[DEBUG] After time filter - blockLogs: " + blockLogs.size() + ", containerLogs: " + containerLogs.size() + ", signLogs: " + signLogs.size() + ", killLogs: " + killLogs.size());
                 }
 
                 // Filter by action if specified
@@ -1129,18 +1134,22 @@ public class MineTracerCommand {
 
     private static long parseTimeArg(String timeArg) {
         try {
+            long result;
             if (timeArg.endsWith("s")) {
-                return Long.parseLong(timeArg.substring(0, timeArg.length() - 1));
+                result = Long.parseLong(timeArg.substring(0, timeArg.length() - 1));
             } else if (timeArg.endsWith("m")) {
-                return Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 60;
+                result = Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 60;
             } else if (timeArg.endsWith("h")) {
-                return Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 3600;
+                result = Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 3600;
             } else if (timeArg.endsWith("d")) {
-                return Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 86400;
+                result = Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 86400;
             } else {
-                return Long.parseLong(timeArg);
+                result = Long.parseLong(timeArg);
             }
+            System.out.println("[DEBUG] parseTimeArg('" + timeArg + "') -> " + result + " seconds");
+            return result;
         } catch (NumberFormatException e) {
+            System.out.println("[DEBUG] parseTimeArg('" + timeArg + "') -> failed to parse, defaulting to 3600");
             return 3600; // Default to 1 hour
         }
     }
