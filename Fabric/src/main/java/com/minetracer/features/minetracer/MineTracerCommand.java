@@ -1144,11 +1144,17 @@ public class MineTracerCommand {
         if (seconds < 60) {
             return seconds + "s";
         } else if (seconds < 3600) {
-            return (seconds / 60) + "m";
+            // Show minutes with one decimal place
+            double minutes = seconds / 60.0;
+            return String.format("%.1fm", minutes);
         } else if (seconds < 86400) {
-            return (seconds / 3600) + "h";
+            // Show hours with one decimal place
+            double hours = seconds / 3600.0;
+            return String.format("%.1fh", hours);
         } else {
-            return (seconds / 86400) + "d";
+            // Show days with one decimal place
+            double days = seconds / 86400.0;
+            return String.format("%.1fd", days);
         }
     }
 }
