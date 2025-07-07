@@ -122,25 +122,30 @@ public abstract class MixinScreenHandler {
         minetracer$isContainerInteraction = false;
     }
     
-    // Optimized helper method - all change processing logic in one place
+    // Ultra-optimized helper method - all change processing logic in one place
     private void minetracer$processSlotChange(PlayerEntity player, ItemStack before, ItemStack after) {
+        // Ultra-fast early exit for no-change scenarios
+        if (before == after) return; // Same object reference
+        if (before.isEmpty() && after.isEmpty()) return; // Both empty
+        
         boolean sameItem = ItemStack.areItemsEqual(before, after) && Objects.equals(before.getNbt(), after.getNbt());
         
         if (sameItem) {
             // Same item type, check quantity change
             int diff = after.getCount() - before.getCount();
-            if (diff > 0) {
-                // Items were deposited
-                ItemStack deposited = after.copy();
-                deposited.setCount(diff);
-                LogStorage.logContainerAction("deposited", player, minetracer$containerPos, deposited);
-            } else if (diff < 0) {
-                // Items were withdrawn
-                ItemStack withdrew = before.copy();
-                withdrew.setCount(-diff);
-                LogStorage.logContainerAction("withdrew", player, minetracer$containerPos, withdrew);
+            if (diff != 0) { // Only log if quantity actually changed
+                if (diff > 0) {
+                    // Items were deposited
+                    ItemStack deposited = after.copy();
+                    deposited.setCount(diff);
+                    LogStorage.logContainerAction("deposited", player, minetracer$containerPos, deposited);
+                } else {
+                    // Items were withdrawn
+                    ItemStack withdrew = before.copy();
+                    withdrew.setCount(-diff);
+                    LogStorage.logContainerAction("withdrew", player, minetracer$containerPos, withdrew);
+                }
             }
-            // If diff == 0, no actual change occurred (shouldn't happen but just in case)
         } else {
             // Different items: handle as separate withdraw and deposit
             if (!before.isEmpty()) {

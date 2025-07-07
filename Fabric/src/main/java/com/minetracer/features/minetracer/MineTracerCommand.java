@@ -725,48 +725,116 @@ public class MineTracerCommand {
         source.sendFeedback(() -> Text.literal("[MineTracer] Found " + totalActions + " actions to rollback.")
                 .formatted(Formatting.AQUA), false);
 
-        // Process container rollbacks
-        for (LogStorage.LogEntry entry : containerLogs) {
-            if ("withdrew".equals(entry.action)) {
-                if (performWithdrawalRollback(world, entry)) {
-                    successfulRollbacks++;
-                } else {
-                    failedRollbacks++;
-                }
-            } else if ("deposited".equals(entry.action)) {
-                if (performDepositRollback(world, entry)) {
-                    successfulRollbacks++;
-                } else {
-                    failedRollbacks++;
-                }
-            }
+        // Sort logs in reverse chronological order when no specific action is requested
+        // This ensures that if a chest is broken after items are taken, the chest is restored first
+        if (actionFilters.isEmpty()) {
+            // Sort all logs by timestamp in descending order (newest first)
+            blockLogs.sort((a, b) -> b.timestamp.compareTo(a.timestamp));
+            signLogs.sort((a, b) -> b.timestamp.compareTo(a.timestamp));
+            containerLogs.sort((a, b) -> b.timestamp.compareTo(a.timestamp));
+            
+            source.sendFeedback(() -> Text.literal("[MineTracer] Processing rollback in reverse chronological order (newest actions first).")
+                    .formatted(Formatting.GRAY), false);
         }
 
-        // Process block rollbacks (placed blocks -> break them, broken blocks ->
-        // restore them)
-        for (LogStorage.BlockLogEntry entry : blockLogs) {
-            if ("placed".equals(entry.action)) {
-                if (performBlockBreakRollback(world, entry)) {
-                    successfulRollbacks++;
-                } else {
-                    failedRollbacks++;
-                }
-            } else if ("broke".equals(entry.action)) {
-                if (performBlockPlaceRollback(world, entry)) {
-                    successfulRollbacks++;
-                } else {
-                    failedRollbacks++;
+        // When no action filter is specified, process in optimal order:
+        // 1. Block restorations first (restore broken containers)
+        // 2. Container actions second (restore items to now-existing containers)  
+        // 3. Sign edits last
+        if (actionFilters.isEmpty()) {
+            // First: Restore broken blocks (especially containers)
+            for (LogStorage.BlockLogEntry entry : blockLogs) {
+                if ("broke".equals(entry.action)) {
+                    if (performBlockPlaceRollback(world, entry)) {
+                        successfulRollbacks++;
+                    } else {
+                        failedRollbacks++;
+                    }
                 }
             }
-        }
+            
+            // Second: Break placed blocks
+            for (LogStorage.BlockLogEntry entry : blockLogs) {
+                if ("placed".equals(entry.action)) {
+                    if (performBlockBreakRollback(world, entry)) {
+                        successfulRollbacks++;
+                    } else {
+                        failedRollbacks++;
+                    }
+                }
+            }
+            
+            // Third: Process container actions (now that containers exist)
+            for (LogStorage.LogEntry entry : containerLogs) {
+                if ("withdrew".equals(entry.action)) {
+                    if (performWithdrawalRollback(world, entry)) {
+                        successfulRollbacks++;
+                    } else {
+                        failedRollbacks++;
+                    }
+                } else if ("deposited".equals(entry.action)) {
+                    if (performDepositRollback(world, entry)) {
+                        successfulRollbacks++;
+                    } else {
+                        failedRollbacks++;
+                    }
+                }
+            }
+            
+            // Fourth: Process sign rollbacks
+            for (LogStorage.SignLogEntry entry : signLogs) {
+                if ("edit".equals(entry.action)) {
+                    if (performSignRollback(world, entry)) {
+                        successfulRollbacks++;
+                    } else {
+                        failedRollbacks++;
+                    }
+                }
+            }
+        } else {
+            // When specific actions are requested, use original order
+            // Process container rollbacks
+            for (LogStorage.LogEntry entry : containerLogs) {
+                if ("withdrew".equals(entry.action)) {
+                    if (performWithdrawalRollback(world, entry)) {
+                        successfulRollbacks++;
+                    } else {
+                        failedRollbacks++;
+                    }
+                } else if ("deposited".equals(entry.action)) {
+                    if (performDepositRollback(world, entry)) {
+                        successfulRollbacks++;
+                    } else {
+                        failedRollbacks++;
+                    }
+                }
+            }
 
-        // Process sign rollbacks (edit -> restore original text)
-        for (LogStorage.SignLogEntry entry : signLogs) {
-            if ("edit".equals(entry.action)) {
-                if (performSignRollback(world, entry)) {
-                    successfulRollbacks++;
-                } else {
-                    failedRollbacks++;
+            // Process block rollbacks (placed blocks -> break them, broken blocks -> restore them)
+            for (LogStorage.BlockLogEntry entry : blockLogs) {
+                if ("placed".equals(entry.action)) {
+                    if (performBlockBreakRollback(world, entry)) {
+                        successfulRollbacks++;
+                    } else {
+                        failedRollbacks++;
+                    }
+                } else if ("broke".equals(entry.action)) {
+                    if (performBlockPlaceRollback(world, entry)) {
+                        successfulRollbacks++;
+                    } else {
+                        failedRollbacks++;
+                    }
+                }
+            }
+
+            // Process sign rollbacks (edit -> restore original text)
+            for (LogStorage.SignLogEntry entry : signLogs) {
+                if ("edit".equals(entry.action)) {
+                    if (performSignRollback(world, entry)) {
+                        successfulRollbacks++;
+                    } else {
+                        failedRollbacks++;
+                    }
                 }
             }
         }

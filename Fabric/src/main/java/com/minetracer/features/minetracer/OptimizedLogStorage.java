@@ -351,18 +351,27 @@ public class OptimizedLogStorage {
         }, queryExecutor);
     }
 
-    // Public API methods
+    // Public API methods - Optimized for minimal overhead
     public static void logContainerAction(String action, PlayerEntity player, BlockPos pos, ItemStack stack) {
-        LogEntry entry = new LogEntry(action, player.getName().getString(), pos, stack, Instant.now());
-        dataLock.writeLock().lock();
-        try {
-            logs.add(entry);
-            hasUnsavedChanges = true;
-        } finally {
-            dataLock.writeLock().unlock();
+        // Quick optimization: skip if stack is empty (shouldn't happen, but just in case)
+        if (stack.isEmpty()) {
+            return;
         }
-        indexLogEntryAsync(entry);
-        invalidateQueryCache();
+        
+        LogEntry entry = new LogEntry(action, player.getName().getString(), pos, stack, Instant.now());
+        
+        // Optimized: Use async executor to avoid blocking the main thread
+        getAsyncExecutor().execute(() -> {
+            dataLock.writeLock().lock();
+            try {
+                logs.add(entry);
+                hasUnsavedChanges = true;
+            } finally {
+                dataLock.writeLock().unlock();
+            }
+            indexLogEntryAsync(entry);
+            invalidateQueryCache();
+        });
     }
 
     public static void logBlockAction(String action, PlayerEntity player, BlockPos pos, String blockId, String nbt) {
