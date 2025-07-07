@@ -19,21 +19,40 @@ import java.util.Map;
 
 @Mixin(ScreenHandler.class)
 public abstract class MixinScreenHandler {
-    // Ultra-optimized: Minimal state tracking
+    // Ultra-optimized: Minimal state tracking with sampling
     private Map<Integer, ItemStack> minetracer$trackedSlots = null;
     private boolean minetracer$isContainerInteraction = false;
     private BlockPos minetracer$containerPos = null;
     private boolean minetracer$hasRelevantSlots = false;
+    private static long minetracer$lastInteractionTime = 0;
+    private static final long INTERACTION_COOLDOWN_MS = 50; // Only track every 50ms
 
     @Inject(method = "onSlotClick", at = @At("HEAD"))
     private void minetracer$logSlotClickHead(int slotIndex, int button,
             net.minecraft.screen.slot.SlotActionType actionType, PlayerEntity player, CallbackInfo ci) {
+        // Ultra-aggressive optimization: Rate limiting
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - minetracer$lastInteractionTime < INTERACTION_COOLDOWN_MS) {
+            minetracer$isContainerInteraction = false;
+            return;
+        }
+        minetracer$lastInteractionTime = currentTime;
+        
         ScreenHandler self = (ScreenHandler) (Object) this;
         
         // Ultra-fast early exit
-        if (self == null || self.slots.size() <= 0) {
+        if (self == null || self.slots.size() <= 3) { // Require at least 4 slots (player inventory has 3 hotbar)
             minetracer$isContainerInteraction = false;
             return;
+        }
+        
+        // Skip if clicking on player inventory slots (most common case)
+        if (slotIndex >= 0 && slotIndex < self.slots.size()) {
+            Slot clickedSlot = self.getSlot(slotIndex);
+            if (clickedSlot.inventory == player.getInventory()) {
+                minetracer$isContainerInteraction = false;
+                return;
+            }
         }
         
         // Quick check: only proceed if first slot is not player inventory
