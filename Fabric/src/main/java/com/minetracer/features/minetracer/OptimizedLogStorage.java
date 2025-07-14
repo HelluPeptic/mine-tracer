@@ -37,6 +37,7 @@ public class OptimizedLogStorage {
         public final BlockPos pos;
         public final ItemStack stack;
         public final Instant timestamp;
+        public boolean rolledBack = false;
 
         public LogEntry(String action, String playerName, BlockPos pos, ItemStack stack, Instant timestamp) {
             this.action = action;
@@ -54,6 +55,7 @@ public class OptimizedLogStorage {
         public final String blockId;
         public final String nbt;
         public final Instant timestamp;
+        public boolean rolledBack = false;
 
         public BlockLogEntry(String action, String playerName, BlockPos pos, String blockId, String nbt,
                 Instant timestamp) {
@@ -73,6 +75,7 @@ public class OptimizedLogStorage {
         public final String text;
         public final String nbt;
         public final Instant timestamp;
+        public boolean rolledBack = false;
 
         public SignLogEntry(String action, String playerName, BlockPos pos, String text, String nbt,
                 Instant timestamp) {
@@ -92,6 +95,7 @@ public class OptimizedLogStorage {
         public final BlockPos pos;
         public final String world;
         public final Instant timestamp;
+        public boolean rolledBack = false;
 
         public KillLogEntry(String killerName, String victimName, BlockPos pos, String world, Instant timestamp) {
             this.killerName = killerName;

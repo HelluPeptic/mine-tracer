@@ -528,53 +528,64 @@ public class MineTracerCommand {
             String timeAgo = getTimeAgo(Duration.between(ce.timestamp, Instant.now()).getSeconds());
             String itemId = Registries.ITEM.getId(ce.stack.getItem()).toString();
             String itemName = ce.stack.getItem().getName().getString();
+            boolean isRolledBack = ce.rolledBack;
 
-            // Format: "8.00s ago — HelloPeptic withdrew 1x #minecraft:oak_log (Oak Log)"
-            return Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
+            Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
                     .append(Text.literal(" — ").formatted(Formatting.WHITE))
                     .append(Text.literal(ce.playerName).formatted(Formatting.AQUA))
                     .append(Text.literal(" " + ce.action + " ").formatted(Formatting.GREEN))
                     .append(Text.literal(ce.stack.getCount() + "x ").formatted(Formatting.WHITE))
                     .append(Text.literal("#" + itemId).formatted(Formatting.YELLOW))
                     .append(Text.literal(" (" + itemName + ")").formatted(Formatting.GRAY));
-
+            if (isRolledBack) {
+                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
+            }
+            return base;
         } else if (entry instanceof LogStorage.BlockLogEntry) {
             LogStorage.BlockLogEntry be = (LogStorage.BlockLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(be.timestamp, Instant.now()).getSeconds());
-
-            // Get block display name
             net.minecraft.block.Block block = Registries.BLOCK.get(new Identifier(be.blockId));
             String blockName = block.getName().getString();
+            boolean isRolledBack = be.rolledBack;
 
-            // Format: "8.00s ago — HelloPeptic placed block #minecraft:glass (Glass)"
-            return Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
+            Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
                     .append(Text.literal(" — ").formatted(Formatting.WHITE))
                     .append(Text.literal(be.playerName).formatted(Formatting.AQUA))
                     .append(Text.literal(" " + be.action + " block ").formatted(Formatting.GREEN))
                     .append(Text.literal("#" + be.blockId).formatted(Formatting.YELLOW))
                     .append(Text.literal(" (" + blockName + ")").formatted(Formatting.GRAY));
-
+            if (isRolledBack) {
+                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
+            }
+            return base;
         } else if (entry instanceof LogStorage.SignLogEntry) {
             LogStorage.SignLogEntry se = (LogStorage.SignLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(se.timestamp, Instant.now()).getSeconds());
+            boolean isRolledBack = se.rolledBack;
 
-            // Format: "8.00s ago — HelloPeptic edited sign"
-            return Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
+            Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
                     .append(Text.literal(" — ").formatted(Formatting.WHITE))
                     .append(Text.literal(se.playerName).formatted(Formatting.AQUA))
                     .append(Text.literal(" edited sign").formatted(Formatting.YELLOW));
-
+            if (isRolledBack) {
+                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
+            }
+            return base;
         } else if (entry instanceof LogStorage.KillLogEntry) {
             LogStorage.KillLogEntry ke = (LogStorage.KillLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(ke.timestamp, Instant.now()).getSeconds());
+            boolean isRolledBack = ke.rolledBack;
 
-            return Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
+            Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
                     .append(Text.literal(" — ").formatted(Formatting.WHITE))
                     .append(Text.literal(ke.killerName).formatted(Formatting.AQUA))
                     .append(Text.literal(" killed ").formatted(Formatting.GREEN))
                     .append(Text.literal(ke.victimName).formatted(Formatting.RED));
+            if (isRolledBack) {
+                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
+            }
+            return base;
         }
-
         return Text.literal("Unknown log entry").formatted(Formatting.GRAY);
     }
 
@@ -744,47 +755,51 @@ public class MineTracerCommand {
         if (actionFilters.isEmpty()) {
             // First: Restore broken blocks (especially containers)
             for (LogStorage.BlockLogEntry entry : blockLogs) {
-                if ("broke".equals(entry.action)) {
+                if ("broke".equals(entry.action) && !entry.rolledBack) {
                     if (performBlockPlaceRollback(world, entry)) {
+                        entry.rolledBack = true;
                         successfulRollbacks++;
                     } else {
                         failedRollbacks++;
                     }
                 }
             }
-            
             // Second: Break placed blocks
             for (LogStorage.BlockLogEntry entry : blockLogs) {
-                if ("placed".equals(entry.action)) {
+                if ("placed".equals(entry.action) && !entry.rolledBack) {
                     if (performBlockBreakRollback(world, entry)) {
+                        entry.rolledBack = true;
                         successfulRollbacks++;
                     } else {
                         failedRollbacks++;
                     }
                 }
             }
-            
             // Third: Process container actions (now that containers exist)
             for (LogStorage.LogEntry entry : containerLogs) {
-                if ("withdrew".equals(entry.action)) {
-                    if (performWithdrawalRollback(world, entry)) {
-                        successfulRollbacks++;
-                    } else {
-                        failedRollbacks++;
-                    }
-                } else if ("deposited".equals(entry.action)) {
-                    if (performDepositRollback(world, entry)) {
-                        successfulRollbacks++;
-                    } else {
-                        failedRollbacks++;
+                if (!entry.rolledBack) {
+                    if ("withdrew".equals(entry.action)) {
+                        if (performWithdrawalRollback(world, entry)) {
+                            entry.rolledBack = true;
+                            successfulRollbacks++;
+                        } else {
+                            failedRollbacks++;
+                        }
+                    } else if ("deposited".equals(entry.action)) {
+                        if (performDepositRollback(world, entry)) {
+                            entry.rolledBack = true;
+                            successfulRollbacks++;
+                        } else {
+                            failedRollbacks++;
+                        }
                     }
                 }
             }
-            
             // Fourth: Process sign rollbacks
             for (LogStorage.SignLogEntry entry : signLogs) {
-                if ("edit".equals(entry.action)) {
+                if ("edit".equals(entry.action) && !entry.rolledBack) {
                     if (performSignRollback(world, entry)) {
+                        entry.rolledBack = true;
                         successfulRollbacks++;
                     } else {
                         failedRollbacks++;
@@ -795,42 +810,49 @@ public class MineTracerCommand {
             // When specific actions are requested, use original order
             // Process container rollbacks
             for (LogStorage.LogEntry entry : containerLogs) {
-                if ("withdrew".equals(entry.action)) {
-                    if (performWithdrawalRollback(world, entry)) {
-                        successfulRollbacks++;
-                    } else {
-                        failedRollbacks++;
-                    }
-                } else if ("deposited".equals(entry.action)) {
-                    if (performDepositRollback(world, entry)) {
-                        successfulRollbacks++;
-                    } else {
-                        failedRollbacks++;
+                if (!entry.rolledBack) {
+                    if ("withdrew".equals(entry.action)) {
+                        if (performWithdrawalRollback(world, entry)) {
+                            entry.rolledBack = true;
+                            successfulRollbacks++;
+                        } else {
+                            failedRollbacks++;
+                        }
+                    } else if ("deposited".equals(entry.action)) {
+                        if (performDepositRollback(world, entry)) {
+                            entry.rolledBack = true;
+                            successfulRollbacks++;
+                        } else {
+                            failedRollbacks++;
+                        }
                     }
                 }
             }
-
             // Process block rollbacks (placed blocks -> break them, broken blocks -> restore them)
             for (LogStorage.BlockLogEntry entry : blockLogs) {
-                if ("placed".equals(entry.action)) {
-                    if (performBlockBreakRollback(world, entry)) {
-                        successfulRollbacks++;
-                    } else {
-                        failedRollbacks++;
-                    }
-                } else if ("broke".equals(entry.action)) {
-                    if (performBlockPlaceRollback(world, entry)) {
-                        successfulRollbacks++;
-                    } else {
-                        failedRollbacks++;
+                if (!entry.rolledBack) {
+                    if ("placed".equals(entry.action)) {
+                        if (performBlockBreakRollback(world, entry)) {
+                            entry.rolledBack = true;
+                            successfulRollbacks++;
+                        } else {
+                            failedRollbacks++;
+                        }
+                    } else if ("broke".equals(entry.action)) {
+                        if (performBlockPlaceRollback(world, entry)) {
+                            entry.rolledBack = true;
+                            successfulRollbacks++;
+                        } else {
+                            failedRollbacks++;
+                        }
                     }
                 }
             }
-
             // Process sign rollbacks (edit -> restore original text)
             for (LogStorage.SignLogEntry entry : signLogs) {
-                if ("edit".equals(entry.action)) {
+                if ("edit".equals(entry.action) && !entry.rolledBack) {
                     if (performSignRollback(world, entry)) {
+                        entry.rolledBack = true;
                         successfulRollbacks++;
                     } else {
                         failedRollbacks++;
