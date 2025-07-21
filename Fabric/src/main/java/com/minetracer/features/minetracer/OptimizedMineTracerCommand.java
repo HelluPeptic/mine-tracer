@@ -272,8 +272,11 @@ public class OptimizedMineTracerCommand {
             return 0;
         }
 
+        // Ensure logs are loaded from disk before lookup
+        LogStorage.ensureLogsLoaded();
+
         String arg = StringArgumentType.getString(ctx, "arg");
-        
+
         // Parse filters asynchronously for better performance
         CompletableFuture.supplyAsync(() -> parseFilters(arg))
             .thenCompose(filters -> performLookupAsync(source, filters))
