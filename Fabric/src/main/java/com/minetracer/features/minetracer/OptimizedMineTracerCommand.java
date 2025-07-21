@@ -64,7 +64,27 @@ public class OptimizedMineTracerCommand {
 
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("minetracer")
+            dispatcher.register(
+                CommandManager.literal("minetracer")
+                    .then(CommandManager.literal("version")
+                        .executes(ctx -> {
+                            String version = "unknown";
+                            try {
+                                java.util.Properties props = new java.util.Properties();
+                                java.io.InputStream in = OptimizedMineTracerCommand.class.getClassLoader().getResourceAsStream("gradle.properties");
+                                if (in != null) {
+                                    props.load(in);
+                                    String v = props.getProperty("version");
+                                    if (v != null && !v.isEmpty()) {
+                                        version = v;
+                                    }
+                                }
+                            } catch (Exception ignored) {}
+                            final String finalVersion = version;
+                            ctx.getSource().sendFeedback(() -> Text.literal("MineTracer version: " + finalVersion).formatted(Formatting.YELLOW), false);
+                            return Command.SINGLE_SUCCESS;
+                        })
+                    )
                     .then(CommandManager.literal("lookup")
                         .requires(source -> Permissions.check(source, "minetracer.command.lookup", 2))
                         .then(CommandManager.argument("arg", StringArgumentType.greedyString())
