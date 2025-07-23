@@ -374,40 +374,51 @@ public class OptimizedMineTracerCommand {
             });
     }
     
-    private static void applyFilters(List<LogStorage.BlockLogEntry> blockLogs, 
-                                   List<LogStorage.SignLogEntry> signLogs,
-                                   List<LogStorage.LogEntry> containerLogs,
-                                   List<LogStorage.KillLogEntry> killLogs,
-                                   FilterConfig config, Instant cutoff) {
-        
-        // Apply user filter to container logs (parallel processing)
+    private static void applyFilters(
+        List<LogStorage.BlockLogEntry> blockLogs,
+        List<LogStorage.SignLogEntry> signLogs,
+        List<LogStorage.LogEntry> containerLogs,
+        List<LogStorage.KillLogEntry> killLogs,
+        FilterConfig config, Instant cutoff
+    ) {
+        // Apply user filter to container logs
         if (config.userFilter != null) {
             final String userFilterFinal = config.userFilter;
             containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
         }
 
-        // Apply time filter (parallel streams for better performance)
+        // Apply time filter
         if (cutoff != null) {
-            final Instant cutoffFinal = cutoff;
-            containerLogs.parallelStream().filter(entry -> !entry.timestamp.isBefore(cutoffFinal));
-            blockLogs.parallelStream().filter(entry -> !entry.timestamp.isBefore(cutoffFinal));
-            signLogs.parallelStream().filter(entry -> !entry.timestamp.isBefore(cutoffFinal));
-            killLogs.parallelStream().filter(entry -> !entry.timestamp.isBefore(cutoffFinal));
+            containerLogs.removeIf(entry -> entry.timestamp.isBefore(cutoff));
+            blockLogs.removeIf(entry -> entry.timestamp.isBefore(cutoff));
+            signLogs.removeIf(entry -> entry.timestamp.isBefore(cutoff));
+            killLogs.removeIf(entry -> entry.timestamp.isBefore(cutoff));
         }
 
-        // Apply action filters
+        // Apply action filters (case-insensitive, allow partial match for robustness)
         if (!config.actionFilters.isEmpty()) {
-            containerLogs.removeIf(entry -> config.actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
-            blockLogs.removeIf(entry -> config.actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
-            signLogs.removeIf(entry -> config.actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
-            killLogs.removeIf(entry -> config.actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
+            containerLogs.removeIf(entry -> config.actionFilters.stream().noneMatch(
+                filter -> entry.action.equalsIgnoreCase(filter)
+                    || entry.action.toLowerCase().contains(filter.toLowerCase())
+                    || (filter.equals("deposited") && entry.action.equalsIgnoreCase("deposited"))
+                    || (filter.equals("withdrew") && entry.action.equalsIgnoreCase("withdrew"))
+            ));
+            blockLogs.removeIf(entry -> config.actionFilters.stream().noneMatch(
+                filter -> entry.action.equalsIgnoreCase(filter) || entry.action.toLowerCase().contains(filter.toLowerCase())
+            ));
+            signLogs.removeIf(entry -> config.actionFilters.stream().noneMatch(
+                filter -> entry.action.equalsIgnoreCase(filter) || entry.action.toLowerCase().contains(filter.toLowerCase())
+            ));
+            killLogs.removeIf(entry -> config.actionFilters.stream().noneMatch(
+                filter -> entry.action.equalsIgnoreCase(filter) || entry.action.toLowerCase().contains(filter.toLowerCase())
+            ));
         }
 
-        // Apply item filter
+        // Apply item filter (case-insensitive, allow partial match)
         if (config.includeItem != null && !config.includeItem.isEmpty()) {
-            final String includeItemFinal = config.includeItem;
-            containerLogs.removeIf(entry -> !Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItemFinal));
-            blockLogs.removeIf(entry -> !entry.blockId.equals(includeItemFinal));
+            final String includeItemFinal = config.includeItem.toLowerCase();
+            containerLogs.removeIf(entry -> !Registries.ITEM.getId(entry.stack.getItem()).toString().toLowerCase().contains(includeItemFinal));
+            blockLogs.removeIf(entry -> !entry.blockId.toLowerCase().contains(includeItemFinal));
         }
     }
     

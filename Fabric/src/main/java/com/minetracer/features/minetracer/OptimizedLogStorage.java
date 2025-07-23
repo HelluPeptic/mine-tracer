@@ -361,9 +361,14 @@ public class OptimizedLogStorage {
         if (stack.isEmpty()) {
             return;
         }
-        
+
         LogEntry entry = new LogEntry(action, player.getName().getString(), pos, stack, Instant.now());
-        
+
+        // Debug output for deposit/withdraw logging
+        if ("deposited".equalsIgnoreCase(action) || "withdrew".equalsIgnoreCase(action)) {
+            System.out.println("[MineTracer] Logging container action: " + action + " by " + player.getName().getString() + " at " + pos + " for " + stack.getCount() + "x " + stack.getName().getString());
+        }
+
         // Optimized: Use async executor to avoid blocking the main thread
         getAsyncExecutor().execute(() -> {
             dataLock.writeLock().lock();

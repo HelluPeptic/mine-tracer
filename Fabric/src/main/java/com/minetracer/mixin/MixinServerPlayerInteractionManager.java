@@ -96,17 +96,27 @@ public class MixinServerPlayerInteractionManager {
                 // Check if this is a sign - if so, only log as sign action, not block action
                 if (blockEntity instanceof net.minecraft.block.entity.SignBlockEntity) {
                     net.minecraft.block.entity.SignBlockEntity sign = (net.minecraft.block.entity.SignBlockEntity) blockEntity;
-                    // Extract all visible lines as plain text
-                    String[] lines = new String[4];
+                    // Extract front and back lines as plain text
+                    String[] frontLines = new String[4];
+                    String[] backLines = new String[4];
                     for (int i = 0; i < 4; i++) {
                         try {
-                            lines[i] = sign.getFrontText().getMessage(i, false).getString();
+                            frontLines[i] = sign.getFrontText().getMessage(i, false).getString();
                         } catch (Exception e) {
-                            lines[i] = "";
+                            frontLines[i] = "";
+                        }
+                        try {
+                            backLines[i] = sign.getBackText().getMessage(i, false).getString();
+                        } catch (Exception e) {
+                            backLines[i] = "";
                         }
                     }
-                    String beforeText = GSON.toJson(lines);
-                    LogStorage.logSignAction("placed", player, placedPos, beforeText, sign.createNbt().toString());
+                    // Store both sides in a JSON object
+                    String textJson = GSON.toJson(new java.util.HashMap<String, Object>() {{
+                        put("front", frontLines);
+                        put("back", backLines);
+                    }});
+                    LogStorage.logSignAction("placed", player, placedPos, textJson, sign.createNbt().toString());
                 } else {
                     // Log as block action for non-sign blocks
                     LogStorage.logBlockAction("placed", player, placedPos, blockId.toString(), nbt);
@@ -189,17 +199,27 @@ public class MixinServerPlayerInteractionManager {
                 // Check if this is a sign - if so, only log as sign action, not block action
                 if (blockEntity instanceof SignBlockEntity) {
                     SignBlockEntity sign = (SignBlockEntity) blockEntity;
-                    // Extract all visible lines as plain text
-                    String[] lines = new String[4];
+                    // Extract front and back lines as plain text
+                    String[] frontLines = new String[4];
+                    String[] backLines = new String[4];
                     for (int i = 0; i < 4; i++) {
                         try {
-                            lines[i] = sign.getFrontText().getMessage(i, false).getString();
+                            frontLines[i] = sign.getFrontText().getMessage(i, false).getString();
                         } catch (Exception e) {
-                            lines[i] = "";
+                            frontLines[i] = "";
+                        }
+                        try {
+                            backLines[i] = sign.getBackText().getMessage(i, false).getString();
+                        } catch (Exception e) {
+                            backLines[i] = "";
                         }
                     }
-                    String beforeText = GSON.toJson(lines);
-                    LogStorage.logSignAction("broke", player, pos, beforeText, sign.createNbt().toString());
+                    // Store both sides in a JSON object
+                    String textJson = GSON.toJson(new java.util.HashMap<String, Object>() {{
+                        put("front", frontLines);
+                        put("back", backLines);
+                    }});
+                    LogStorage.logSignAction("broke", player, pos, textJson, sign.createNbt().toString());
                 } else {
                     // Log as block action for non-sign blocks
                     LogStorage.logBlockAction("broke", player, pos, blockId.toString(), nbt);
@@ -235,6 +255,27 @@ public class MixinServerPlayerInteractionManager {
             }
             for (LogStorage.SignLogEntry entry : signLogs) {
                 message.append("\n§7Sign ").append(entry.action).append(" by ").append(entry.playerName);
+                // Try to parse front/back text if present
+                if (entry.text != null && !entry.text.isEmpty()) {
+                    try {
+                        com.google.gson.Gson gson = new com.google.gson.Gson();
+                        java.util.Map<?,?> textObj = gson.fromJson(entry.text, java.util.Map.class);
+                        Object front = textObj.get("front");
+                        Object back = textObj.get("back");
+                        if (front instanceof java.util.List) {
+                            message.append("\n§eFront: ");
+                            for (Object line : (java.util.List<?>) front) {
+                                message.append(line.toString()).append(" | ");
+                            }
+                        }
+                        if (back instanceof java.util.List) {
+                            message.append("\n§eBack: ");
+                            for (Object line : (java.util.List<?>) back) {
+                                message.append(line.toString()).append(" | ");
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
                 found = true;
             }
             for (LogStorage.LogEntry entry : containerLogs) {

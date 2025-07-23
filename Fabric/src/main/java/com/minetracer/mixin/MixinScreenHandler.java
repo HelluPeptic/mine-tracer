@@ -129,7 +129,8 @@ public abstract class MixinScreenHandler {
     @Inject(method = "onSlotClick", at = @At("RETURN"))
     private void minetracer$logSlotClickReturn(int slotIndex, int button,
             net.minecraft.screen.slot.SlotActionType actionType, PlayerEntity player, CallbackInfo ci) {
-
+        // DEBUG: Log actionType for troubleshooting shift-click
+        System.out.println("[MineTracer] onSlotClick RETURN: slotIndex=" + slotIndex + ", button=" + button + ", actionType=" + actionType);
         // Quick exit if this wasn't a container interaction
         if (!minetracer$isContainerInteraction || minetracer$trackedSlots == null) {
             return;
@@ -137,27 +138,51 @@ public abstract class MixinScreenHandler {
 
         ScreenHandler self = (ScreenHandler) (Object) this;
 
-        // Optimized: Only check container slots, and only those that changed
-        for (int i = 0; i < self.slots.size(); i++) {
-            Slot slot = self.getSlot(i);
-
-            // Skip player inventory slots
-            if (slot.inventory == player.getInventory()) {
-                continue;
+        // Special handling for shift-click (QUICK_MOVE)
+        if (actionType == SlotActionType.QUICK_MOVE) {
+            // For shift-click, the slotIndex is the source slot, and items are moved to the first available slot in the container.
+            // We need to check all slots for changes, as items may be merged or split.
+            for (int i = 0; i < self.slots.size(); i++) {
+                Slot slot = self.getSlot(i);
+                if (slot.inventory == player.getInventory()) {
+                    continue;
+                }
+                ItemStack before = minetracer$trackedSlots.getOrDefault(i, ItemStack.EMPTY);
+                ItemStack after = slot.getStack();
+                // Always process slot change for QUICK_MOVE, even if only deposit or withdraw
+                if (!before.isEmpty() && after.isEmpty()) {
+                    minetracer$processSlotChange(player, before, after); // Withdraw
+                } else if (before.isEmpty() && !after.isEmpty()) {
+                    minetracer$processSlotChange(player, before, after); // Deposit
+                } else if (!before.isEmpty() && !after.isEmpty()) {
+                    boolean sameItem = ItemStack.areItemsEqual(before, after) && Objects.equals(before.getNbt(), after.getNbt());
+                    if (!sameItem || before.getCount() != after.getCount()) {
+                        minetracer$processSlotChange(player, before, after);
+                    }
+                }
             }
+        } else {
+            // Optimized: Only check container slots, and only those that changed
+            for (int i = 0; i < self.slots.size(); i++) {
+                Slot slot = self.getSlot(i);
 
-            ItemStack before = minetracer$trackedSlots.getOrDefault(i, ItemStack.EMPTY);
-            ItemStack after = slot.getStack();
+                // Skip player inventory slots
+                if (slot.inventory == player.getInventory()) {
+                    continue;
+                }
 
-            // Optimization: skip if both are empty (most common case)
-            if (before.isEmpty() && after.isEmpty()) {
-                continue;
+                ItemStack before = minetracer$trackedSlots.getOrDefault(i, ItemStack.EMPTY);
+                ItemStack after = slot.getStack();
+
+                // Optimization: skip if both are empty (most common case)
+                if (before.isEmpty() && after.isEmpty()) {
+                    continue;
+                }
+
+                // Process the actual change
+                minetracer$processSlotChange(player, before, after);
             }
-
-            // Process the actual change
-            minetracer$processSlotChange(player, before, after);
         }
-
         // Clear for next interaction to free memory
         minetracer$trackedSlots.clear();
         minetracer$isContainerInteraction = false;
@@ -171,30 +196,38 @@ public abstract class MixinScreenHandler {
         if (before.isEmpty() && after.isEmpty())
             return; // Both empty
 
-        boolean sameItem = ItemStack.areItemsEqual(before, after) && Objects.equals(before.getNbt(), after.getNbt());
-
-        if (sameItem) {
-            // Same item type, check quantity change
-            int diff = after.getCount() - before.getCount();
-            if (diff != 0) { // Only log if quantity actually changed
+        // Robust deposit/withdraw detection
+        if (before.isEmpty() && !after.isEmpty()) {
+            // Slot was empty, now has items: deposit
+            System.out.println("[MineTracer] Deposit detected (empty->item): " + player.getName().getString() + " at " + minetracer$containerPos + " for " + after.getCount() + "x " + after.getName().getString());
+            LogStorage.logContainerAction("deposited", player, minetracer$containerPos, after.copy());
+        } else if (!before.isEmpty() && after.isEmpty()) {
+            // Slot had items, now empty: withdraw
+            System.out.println("[MineTracer] Withdraw detected (item->empty): " + player.getName().getString() + " at " + minetracer$containerPos + " for " + before.getCount() + "x " + before.getName().getString());
+            LogStorage.logContainerAction("withdrew", player, minetracer$containerPos, before.copy());
+        } else if (!before.isEmpty() && !after.isEmpty()) {
+            boolean sameItem = ItemStack.areItemsEqual(before, after) && Objects.equals(before.getNbt(), after.getNbt());
+            if (sameItem) {
+                // Same item type, check quantity change
+                int diff = after.getCount() - before.getCount();
                 if (diff > 0) {
                     // Items were deposited
+                    System.out.println("[MineTracer] Deposit detected (count+): " + player.getName().getString() + " at " + minetracer$containerPos + " for " + diff + "x " + after.getName().getString());
                     ItemStack deposited = after.copy();
                     deposited.setCount(diff);
                     LogStorage.logContainerAction("deposited", player, minetracer$containerPos, deposited);
-                } else {
+                } else if (diff < 0) {
                     // Items were withdrawn
+                    System.out.println("[MineTracer] Withdraw detected (count-): " + player.getName().getString() + " at " + minetracer$containerPos + " for " + (-diff) + "x " + before.getName().getString());
                     ItemStack withdrew = before.copy();
                     withdrew.setCount(-diff);
                     LogStorage.logContainerAction("withdrew", player, minetracer$containerPos, withdrew);
                 }
-            }
-        } else {
-            // Different items: handle as separate withdraw and deposit
-            if (!before.isEmpty()) {
+            } else {
+                // Different item or NBT: treat as withdraw of old and deposit of new
+                System.out.println("[MineTracer] Withdraw detected (item change): " + player.getName().getString() + " at " + minetracer$containerPos + " for " + before.getCount() + "x " + before.getName().getString());
                 LogStorage.logContainerAction("withdrew", player, minetracer$containerPos, before.copy());
-            }
-            if (!after.isEmpty()) {
+                System.out.println("[MineTracer] Deposit detected (item change): " + player.getName().getString() + " at " + minetracer$containerPos + " for " + after.getCount() + "x " + after.getName().getString());
                 LogStorage.logContainerAction("deposited", player, minetracer$containerPos, after.copy());
             }
         }
