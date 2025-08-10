@@ -31,6 +31,12 @@ public class MineTracerCommand {
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("minetracer")
+                    .then(CommandManager.literal("testchat")
+                            .requires(source -> Permissions.check(source, "minetracer.command.lookup", 2))
+                            .executes(MineTracerCommand::testChat))
+                    .then(CommandManager.literal("testcommand")
+                            .requires(source -> Permissions.check(source, "minetracer.command.lookup", 2))
+                            .executes(MineTracerCommand::testCommand))
                     .then(CommandManager.literal("lookup")
                             .requires(source -> Permissions.check(source, "minetracer.command.lookup", 2))
                             .then(CommandManager.argument("arg", StringArgumentType.greedyString())
@@ -127,7 +133,7 @@ public class MineTracerCommand {
             }
         } else if (currentTyping.startsWith("action:")) {
             String actionPart = currentTyping.substring(7);
-            String[] actions = { "withdrew", "deposited", "broke", "placed", "sign", "kill" };
+            String[] actions = { "withdrew", "deposited", "broke", "placed", "sign", "kill", "command", "chat" };
             String beforeCurrent = remaining.substring(0, remaining.lastIndexOf(currentTyping));
 
             int lastComma = actionPart.lastIndexOf(',');
@@ -268,6 +274,28 @@ public class MineTracerCommand {
         }
     }
 
+    public static int testChat(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+        String playerName = source.getName();
+        
+        System.out.println("[MineTracer] Adding test chat log for: " + playerName);
+        OptimizedLogStorage.logChatAction(playerName, "This is a test chat message");
+        
+        source.sendFeedback(() -> Text.literal("[MineTracer] Test chat log added!").formatted(Formatting.GREEN), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    public static int testCommand(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+        String playerName = source.getName();
+        
+        System.out.println("[MineTracer] Adding test command log for: " + playerName);
+        OptimizedLogStorage.logCommandAction(playerName, "/test command example");
+        
+        source.sendFeedback(() -> Text.literal("[MineTracer] Test command log added!").formatted(Formatting.GREEN), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
     public static int lookup(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
         if (!Permissions.check(source, "minetracer.command.lookup", 2)) {
@@ -350,6 +378,8 @@ public class MineTracerCommand {
             CompletableFuture<List<OptimizedLogStorage.SignLogEntry>> signLogsFuture;
             CompletableFuture<List<OptimizedLogStorage.LogEntry>> containerLogsFuture;
             CompletableFuture<List<OptimizedLogStorage.KillLogEntry>> killLogsFuture;
+            CompletableFuture<List<OptimizedLogStorage.CommandLogEntry>> commandLogsFuture;
+            CompletableFuture<List<OptimizedLogStorage.ChatLogEntry>> chatLogsFuture;
 
             // If user is specified but no custom range, do global search
             if (hasUser && !hasRange) {
@@ -357,12 +387,16 @@ public class MineTracerCommand {
                 signLogsFuture = OptimizedLogStorage.getSignLogsForUserAsync(userFilter);
                 containerLogsFuture = OptimizedLogStorage.getContainerLogsForUserAsync(userFilter);
                 killLogsFuture = OptimizedLogStorage.getKillLogsForUserAsync(userFilter, filterByKiller);
+                commandLogsFuture = OptimizedLogStorage.getCommandLogsForUserAsync(userFilter);
+                chatLogsFuture = OptimizedLogStorage.getChatLogsForUserAsync(userFilter);
             } else {
                 // Use range-based search
                 blockLogsFuture = OptimizedLogStorage.getBlockLogsInRangeAsync(playerPos, range, userFilter);
                 signLogsFuture = OptimizedLogStorage.getSignLogsInRangeAsync(playerPos, range, userFilter);
                 containerLogsFuture = OptimizedLogStorage.getLogsInRangeAsync(playerPos, range);
                 killLogsFuture = OptimizedLogStorage.getKillLogsInRangeAsync(playerPos, range, userFilter, filterByKiller);
+                commandLogsFuture = OptimizedLogStorage.getCommandLogsAsync(userFilter);
+                chatLogsFuture = OptimizedLogStorage.getChatLogsAsync(userFilter);
             }
 
             try {
@@ -370,6 +404,8 @@ public class MineTracerCommand {
                 List<OptimizedLogStorage.SignLogEntry> signLogs = signLogsFuture.get();
                 List<OptimizedLogStorage.LogEntry> containerLogs = containerLogsFuture.get();
                 List<OptimizedLogStorage.KillLogEntry> killLogs = killLogsFuture.get();
+                List<OptimizedLogStorage.CommandLogEntry> commandLogs = commandLogsFuture.get();
+                List<OptimizedLogStorage.ChatLogEntry> chatLogs = chatLogsFuture.get();
 
                 // Apply user filter to container logs (only needed for range-based search)
                 if (userFilter != null && !(hasUser && !hasRange)) {
@@ -384,6 +420,8 @@ public class MineTracerCommand {
                     signLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
                     containerLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
                     killLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+                    commandLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+                    chatLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
                 }
 
                 // Filter by action if specified
@@ -395,6 +433,10 @@ public class MineTracerCommand {
                     signLogs.removeIf(
                             entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
                     killLogs.removeIf(
+                            entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
+                    commandLogs.removeIf(
+                            entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
+                    chatLogs.removeIf(
                             entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
                 }
 
@@ -585,6 +627,34 @@ public class MineTracerCommand {
                 base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
             }
             return base;
+        } else if (entry instanceof OptimizedLogStorage.CommandLogEntry) {
+            OptimizedLogStorage.CommandLogEntry ce = (OptimizedLogStorage.CommandLogEntry) entry;
+            String timeAgo = getTimeAgo(Duration.between(ce.timestamp, Instant.now()).getSeconds());
+            boolean isRolledBack = ce.rolledBack;
+
+            Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
+                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
+                    .append(Text.literal(ce.playerName).formatted(Formatting.AQUA))
+                    .append(Text.literal(" executed ").formatted(Formatting.YELLOW))
+                    .append(Text.literal("/" + ce.command).formatted(Formatting.GREEN));
+            if (isRolledBack) {
+                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
+            }
+            return base;
+        } else if (entry instanceof OptimizedLogStorage.ChatLogEntry) {
+            OptimizedLogStorage.ChatLogEntry che = (OptimizedLogStorage.ChatLogEntry) entry;
+            String timeAgo = getTimeAgo(Duration.between(che.timestamp, Instant.now()).getSeconds());
+            boolean isRolledBack = che.rolledBack;
+
+            Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
+                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
+                    .append(Text.literal(che.playerName).formatted(Formatting.AQUA))
+                    .append(Text.literal(" said ").formatted(Formatting.YELLOW))
+                    .append(Text.literal("\"" + che.message + "\"").formatted(Formatting.WHITE));
+            if (isRolledBack) {
+                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
+            }
+            return base;
         }
         return Text.literal("Unknown log entry").formatted(Formatting.GRAY);
     }
@@ -600,6 +670,12 @@ public class MineTracerCommand {
             pos = ((OptimizedLogStorage.SignLogEntry) entry).pos;
         } else if (entry instanceof OptimizedLogStorage.KillLogEntry) {
             pos = ((OptimizedLogStorage.KillLogEntry) entry).pos;
+        } else if (entry instanceof OptimizedLogStorage.CommandLogEntry) {
+            // Command entries don't have positions
+            pos = null;
+        } else if (entry instanceof OptimizedLogStorage.ChatLogEntry) {
+            // Chat entries don't have positions
+            pos = null;
         }
 
         if (pos != null) {

@@ -105,23 +105,57 @@ public class OptimizedLogStorage {
         }
     }
 
+    public static class CommandLogEntry {
+        public final String action = "command";
+        public final String playerName;
+        public final String command;
+        public final Instant timestamp;
+        public boolean rolledBack = false;
+
+        public CommandLogEntry(String playerName, String command, Instant timestamp) {
+            this.playerName = playerName;
+            this.command = command;
+            this.timestamp = timestamp;
+        }
+    }
+
+    public static class ChatLogEntry {
+        public final String action = "chat";
+        public final String playerName;
+        public final String message;
+        public final Instant timestamp;
+        public boolean rolledBack = false;
+
+        public ChatLogEntry(String playerName, String message, Instant timestamp) {
+            this.playerName = playerName;
+            this.message = message;
+            this.timestamp = timestamp;
+        }
+    }
+
     // Primary storage lists
     private static final List<LogEntry> logs = new ArrayList<>();
     private static final List<BlockLogEntry> blockLogs = new ArrayList<>();
     private static final List<SignLogEntry> signLogs = new ArrayList<>();
     private static final List<KillLogEntry> killLogs = new ArrayList<>();
+    private static final List<CommandLogEntry> commandLogs = new ArrayList<>();
+    private static final List<ChatLogEntry> chatLogs = new ArrayList<>();
 
     // High-performance spatial indexing using FastUtil
     private static final Object2ObjectOpenHashMap<String, List<LogEntry>> playerContainerLogs = new Object2ObjectOpenHashMap<>();
     private static final Object2ObjectOpenHashMap<String, List<BlockLogEntry>> playerBlockLogs = new Object2ObjectOpenHashMap<>();
     private static final Object2ObjectOpenHashMap<String, List<SignLogEntry>> playerSignLogs = new Object2ObjectOpenHashMap<>();
     private static final Object2ObjectOpenHashMap<String, List<KillLogEntry>> playerKillLogs = new Object2ObjectOpenHashMap<>();
+    private static final Object2ObjectOpenHashMap<String, List<CommandLogEntry>> playerCommandLogs = new Object2ObjectOpenHashMap<>();
+    private static final Object2ObjectOpenHashMap<String, List<ChatLogEntry>> playerChatLogs = new Object2ObjectOpenHashMap<>();
 
     // Chunk-based spatial indexing for O(1) range queries
     private static final Long2ObjectOpenHashMap<List<LogEntry>> chunkContainerLogs = new Long2ObjectOpenHashMap<>();
     private static final Long2ObjectOpenHashMap<List<BlockLogEntry>> chunkBlockLogs = new Long2ObjectOpenHashMap<>();
     private static final Long2ObjectOpenHashMap<List<SignLogEntry>> chunkSignLogs = new Long2ObjectOpenHashMap<>();
     private static final Long2ObjectOpenHashMap<List<KillLogEntry>> chunkKillLogs = new Long2ObjectOpenHashMap<>();
+    private static final Long2ObjectOpenHashMap<List<CommandLogEntry>> chunkCommandLogs = new Long2ObjectOpenHashMap<>();
+    private static final Long2ObjectOpenHashMap<List<ChatLogEntry>> chunkChatLogs = new Long2ObjectOpenHashMap<>();
 
     private static final Path LOG_FILE = Path.of("config", "minetracer", "logs.json");
 
@@ -230,6 +264,30 @@ public class OptimizedLogStorage {
         });
     }
 
+    private static void indexCommandLogEntryAsync(CommandLogEntry entry) {
+        indexingExecutor.submit(() -> {
+            dataLock.writeLock().lock();
+            try {
+                playerCommandLogs.computeIfAbsent(entry.playerName, k -> new ArrayList<>()).add(entry);
+                // No spatial indexing for commands since they don't have positions
+            } finally {
+                dataLock.writeLock().unlock();
+            }
+        });
+    }
+
+    private static void indexChatLogEntryAsync(ChatLogEntry entry) {
+        indexingExecutor.submit(() -> {
+            dataLock.writeLock().lock();
+            try {
+                playerChatLogs.computeIfAbsent(entry.playerName, k -> new ArrayList<>()).add(entry);
+                // No spatial indexing for chat since they don't have positions
+            } finally {
+                dataLock.writeLock().unlock();
+            }
+        });
+    }
+
     // Async log loading with spatial indexing
     private static CompletableFuture<Void> loadAllLogsAsync() {
         return CompletableFuture.runAsync(() -> {
@@ -242,15 +300,21 @@ public class OptimizedLogStorage {
                 blockLogs.clear();
                 signLogs.clear();
                 killLogs.clear();
+                commandLogs.clear();
+                chatLogs.clear();
 
                 playerContainerLogs.clear();
                 playerBlockLogs.clear();
                 playerSignLogs.clear();
                 playerKillLogs.clear();
+                playerCommandLogs.clear();
+                playerChatLogs.clear();
                 chunkContainerLogs.clear();
                 chunkBlockLogs.clear();
                 chunkSignLogs.clear();
                 chunkKillLogs.clear();
+                chunkCommandLogs.clear();
+                chunkChatLogs.clear();
 
                 Files.createDirectories(LOG_FILE.getParent());
                 System.out.println("[MineTracer] Looking for log file at: " + LOG_FILE.toString());
@@ -341,13 +405,39 @@ public class OptimizedLogStorage {
                             long chunkKey = getChunkKey(entry.pos);
                             chunkKillLogs.computeIfAbsent(chunkKey, k -> new ArrayList<>()).add(entry);
                         }
+
+                        // Load command logs
+                        List<Map<String, Object>> commandList = (List<Map<String, Object>>) allLogs.getOrDefault("command",
+                                new ArrayList<>());
+                        for (Map<String, Object> obj : commandList) {
+                            CommandLogEntry entry = new CommandLogEntry((String) obj.get("playerName"),
+                                    (String) obj.get("command"),
+                                    java.time.Instant.parse((String) obj.get("timestamp")));
+                            commandLogs.add(entry);
+
+                            playerCommandLogs.computeIfAbsent(entry.playerName, k -> new ArrayList<>()).add(entry);
+                            // No spatial indexing for commands
+                        }
+
+                        // Load chat logs
+                        List<Map<String, Object>> chatList = (List<Map<String, Object>>) allLogs.getOrDefault("chat",
+                                new ArrayList<>());
+                        for (Map<String, Object> obj : chatList) {
+                            ChatLogEntry entry = new ChatLogEntry((String) obj.get("playerName"),
+                                    (String) obj.get("message"),
+                                    java.time.Instant.parse((String) obj.get("timestamp")));
+                            chatLogs.add(entry);
+
+                            playerChatLogs.computeIfAbsent(entry.playerName, k -> new ArrayList<>()).add(entry);
+                            // No spatial indexing for chat
+                        }
                     }
                 } else {
                     System.out.println("[MineTracer] No log file found, starting with empty storage");
                 }
                 hasUnsavedChanges = false;
                 logsLoaded = true;
-                System.out.println("[MineTracer] Loading complete: " + logs.size() + " container, " + blockLogs.size() + " block, " + signLogs.size() + " sign, " + killLogs.size() + " kill entries");
+                System.out.println("[MineTracer] Loading complete: " + logs.size() + " container, " + blockLogs.size() + " block, " + signLogs.size() + " sign, " + killLogs.size() + " kill, " + commandLogs.size() + " command, " + chatLogs.size() + " chat entries");
             } catch (Exception e) {
                 System.err.println("[MineTracer] Failed to load logs: " + e.getMessage());
                 e.printStackTrace();
@@ -420,6 +510,35 @@ public class OptimizedLogStorage {
         }
         indexKillLogEntryAsync(entry);
         invalidateQueryCache();
+    }
+
+    public static void logCommandAction(String playerName, String command) {
+        CommandLogEntry entry = new CommandLogEntry(playerName, command, Instant.now());
+        dataLock.writeLock().lock();
+        try {
+            commandLogs.add(entry);
+            hasUnsavedChanges = true;
+        } finally {
+            dataLock.writeLock().unlock();
+        }
+        indexCommandLogEntryAsync(entry);
+        invalidateQueryCache();
+    }
+
+    public static void logChatAction(String playerName, String message) {
+        System.out.println("[MineTracer] Logging chat action: " + playerName + " -> " + message);
+        ChatLogEntry entry = new ChatLogEntry(playerName, message, Instant.now());
+        dataLock.writeLock().lock();
+        try {
+            chatLogs.add(entry);
+            hasUnsavedChanges = true;
+            System.out.println("[MineTracer] Chat logs now has " + chatLogs.size() + " entries");
+        } finally {
+            dataLock.writeLock().unlock();
+        }
+        indexChatLogEntryAsync(entry);
+        invalidateQueryCache();
+        System.out.println("[MineTracer] Chat action logged successfully");
     }
 
     public static void logInventoryAction(String action, PlayerEntity player, ItemStack stack) {
@@ -558,6 +677,70 @@ public class OptimizedLogStorage {
                         }
                     }
                 }
+
+                queryCache.put(cacheKey, result);
+                return result;
+            } finally {
+                dataLock.readLock().unlock();
+            }
+        }, queryExecutor);
+    }
+
+    public static CompletableFuture<List<CommandLogEntry>> getCommandLogsAsync(String userFilter) {
+        return CompletableFuture.supplyAsync(() -> {
+            ensureLogsLoaded(); // Ensure logs are loaded before querying
+            
+            String cacheKey = "command_all_" + userFilter;
+            List<CommandLogEntry> cached = (List<CommandLogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+
+            dataLock.readLock().lock();
+            try {
+                List<CommandLogEntry> result = new ArrayList<>();
+                for (List<CommandLogEntry> commandLogs : playerCommandLogs.values()) {
+                    for (CommandLogEntry entry : commandLogs) {
+                        if (userFilter == null || userFilter.isEmpty() || entry.playerName.equalsIgnoreCase(userFilter)) {
+                            result.add(entry);
+                        }
+                    }
+                }
+
+                queryCache.put(cacheKey, result);
+                return result;
+            } finally {
+                dataLock.readLock().unlock();
+            }
+        }, queryExecutor);
+    }
+
+    public static CompletableFuture<List<ChatLogEntry>> getChatLogsAsync(String userFilter) {
+        return CompletableFuture.supplyAsync(() -> {
+            ensureLogsLoaded(); // Ensure logs are loaded before querying
+            
+            String cacheKey = "chat_all_" + userFilter;
+            List<ChatLogEntry> cached = (List<ChatLogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+
+            dataLock.readLock().lock();
+            try {
+                List<ChatLogEntry> result = new ArrayList<>();
+                System.out.println("[MineTracer] Querying chat logs with filter: " + userFilter);
+                System.out.println("[MineTracer] playerChatLogs has " + playerChatLogs.size() + " players");
+                System.out.println("[MineTracer] chatLogs has " + chatLogs.size() + " total entries");
+                
+                for (List<ChatLogEntry> chatLogs : playerChatLogs.values()) {
+                    for (ChatLogEntry entry : chatLogs) {
+                        if (userFilter == null || userFilter.isEmpty() || entry.playerName.equalsIgnoreCase(userFilter)) {
+                            result.add(entry);
+                        }
+                    }
+                }
+                
+                System.out.println("[MineTracer] Found " + result.size() + " matching chat entries");
 
                 queryCache.put(cacheKey, result);
                 return result;
@@ -749,6 +932,72 @@ public class OptimizedLogStorage {
         }, queryExecutor);
     }
 
+    public static CompletableFuture<List<CommandLogEntry>> getCommandLogsForUserAsync(String userFilter) {
+        return CompletableFuture.supplyAsync(() -> {
+            ensureLogsLoaded(); // Ensure logs are loaded before querying
+            
+            if (userFilter == null || userFilter.isEmpty()) {
+                return new ArrayList<>();
+            }
+            
+            String cacheKey = "command_user_" + userFilter;
+            List<CommandLogEntry> cached = (List<CommandLogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+
+            dataLock.readLock().lock();
+            try {
+                List<CommandLogEntry> result = new ArrayList<>();
+                // Case-insensitive lookup for player
+                for (Map.Entry<String, List<CommandLogEntry>> playerEntry : playerCommandLogs.entrySet()) {
+                    if (playerEntry.getKey().equalsIgnoreCase(userFilter)) {
+                        result.addAll(playerEntry.getValue());
+                        break; // Found the player, no need to continue
+                    }
+                }
+
+                queryCache.put(cacheKey, result);
+                return result;
+            } finally {
+                dataLock.readLock().unlock();
+            }
+        }, queryExecutor);
+    }
+
+    public static CompletableFuture<List<ChatLogEntry>> getChatLogsForUserAsync(String userFilter) {
+        return CompletableFuture.supplyAsync(() -> {
+            ensureLogsLoaded(); // Ensure logs are loaded before querying
+            
+            if (userFilter == null || userFilter.isEmpty()) {
+                return new ArrayList<>();
+            }
+            
+            String cacheKey = "chat_user_" + userFilter;
+            List<ChatLogEntry> cached = (List<ChatLogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+
+            dataLock.readLock().lock();
+            try {
+                List<ChatLogEntry> result = new ArrayList<>();
+                // Case-insensitive lookup for player
+                for (Map.Entry<String, List<ChatLogEntry>> playerEntry : playerChatLogs.entrySet()) {
+                    if (playerEntry.getKey().equalsIgnoreCase(userFilter)) {
+                        result.addAll(playerEntry.getValue());
+                        break; // Found the player, no need to continue
+                    }
+                }
+
+                queryCache.put(cacheKey, result);
+                return result;
+            } finally {
+                dataLock.readLock().unlock();
+            }
+        }, queryExecutor);
+    }
+
     // Backwards compatibility synchronous methods
     public static List<BlockLogEntry> getBlockLogsInRange(BlockPos center, int range, String userFilter) {
         try {
@@ -874,6 +1123,16 @@ public class OptimizedLogStorage {
                         for (KillLogEntry entry : killLogs)
                             killList.add(new KillLogEntryJson(entry));
                         allLogs.put("kill", killList);
+
+                        List<Object> commandList = new ArrayList<>();
+                        for (CommandLogEntry entry : commandLogs)
+                            commandList.add(new CommandLogEntryJson(entry));
+                        allLogs.put("command", commandList);
+
+                        List<Object> chatList = new ArrayList<>();
+                        for (ChatLogEntry entry : chatLogs)
+                            chatList.add(new ChatLogEntryJson(entry));
+                        allLogs.put("chat", chatList);
                     } finally {
                         dataLock.readLock().unlock();
                     }
@@ -955,6 +1214,32 @@ public class OptimizedLogStorage {
             this.victimName = entry.victimName;
             this.pos = entry.pos.getX() + "," + entry.pos.getY() + "," + entry.pos.getZ();
             this.world = entry.world;
+            this.timestamp = entry.timestamp.toString();
+        }
+    }
+
+    private static class CommandLogEntryJson {
+        String action = "command";
+        String playerName;
+        String command;
+        String timestamp;
+
+        CommandLogEntryJson(CommandLogEntry entry) {
+            this.playerName = entry.playerName;
+            this.command = entry.command;
+            this.timestamp = entry.timestamp.toString();
+        }
+    }
+
+    private static class ChatLogEntryJson {
+        String action = "chat";
+        String playerName;
+        String message;
+        String timestamp;
+
+        ChatLogEntryJson(ChatLogEntry entry) {
+            this.playerName = entry.playerName;
+            this.message = entry.message;
             this.timestamp = entry.timestamp.toString();
         }
     }
