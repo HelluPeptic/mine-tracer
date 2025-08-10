@@ -1,6 +1,6 @@
 package com.minetracer.mixin;
 
-import com.minetracer.features.minetracer.LogStorage;
+import com.minetracer.features.minetracer.OptimizedLogStorage;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.network.ServerPlayerInteractionManager;
 import net.minecraft.util.math.BlockPos;
@@ -47,7 +47,7 @@ public class MixinServerPlayerInteractionManager {
             net.minecraft.util.hit.BlockHitResult hitResult,
             CallbackInfoReturnable<net.minecraft.util.ActionResult> cir) {
         // Inspector mode check
-        if (LogStorage.isInspectorMode(player)) {
+        if (OptimizedLogStorage.isInspectorMode(player)) {
             minetracer$inspectorModeInteract(player, world, stack, hand, hitResult, cir);
             return;
         }
@@ -106,15 +106,15 @@ public class MixinServerPlayerInteractionManager {
                         }
                     }
                     String beforeText = GSON.toJson(lines);
-                    LogStorage.logSignAction("placed", player, placedPos, beforeText, sign.createNbt().toString());
+                    OptimizedLogStorage.logSignAction("placed", player, placedPos, beforeText, sign.createNbt().toString());
                 } else {
                     // Log as block action for non-sign blocks
-                    LogStorage.logBlockAction("placed", player, placedPos, blockId.toString(), nbt);
+                    OptimizedLogStorage.logBlockAction("placed", player, placedPos, blockId.toString(), nbt);
                 }
             } catch (Exception e) {
                 System.err.println("[MineTracer] Error logging block place: " + e.getMessage());
             }
-        }, LogStorage.getAsyncExecutor());
+        }, OptimizedLogStorage.getAsyncExecutor());
     }
 
     @Inject(method = "tryBreakBlock", at = @At("HEAD"))
@@ -146,7 +146,7 @@ public class MixinServerPlayerInteractionManager {
         this.minetracer$prevBrokenBlockEntity = null;
 
         // Inspector mode check
-        if (LogStorage.isInspectorMode(player)) {
+        if (OptimizedLogStorage.isInspectorMode(player)) {
             minetracer$inspectorModeBreak(pos, cir);
             return;
         }
@@ -199,15 +199,15 @@ public class MixinServerPlayerInteractionManager {
                         }
                     }
                     String beforeText = GSON.toJson(lines);
-                    LogStorage.logSignAction("broke", player, pos, beforeText, sign.createNbt().toString());
+                    OptimizedLogStorage.logSignAction("broke", player, pos, beforeText, sign.createNbt().toString());
                 } else {
                     // Log as block action for non-sign blocks
-                    LogStorage.logBlockAction("broke", player, pos, blockId.toString(), nbt);
+                    OptimizedLogStorage.logBlockAction("broke", player, pos, blockId.toString(), nbt);
                 }
             } catch (Exception e) {
                 System.err.println("[MineTracer] Error logging block break: " + e.getMessage());
             }
-        }, LogStorage.getAsyncExecutor());
+        }, OptimizedLogStorage.getAsyncExecutor());
     }
 
     @org.spongepowered.asm.mixin.Unique
@@ -219,29 +219,29 @@ public class MixinServerPlayerInteractionManager {
 
         // Use async lookup to avoid blocking
         CompletableFuture.supplyAsync(() -> {
-            java.util.List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(pos, 0, null);
-            java.util.List<LogStorage.SignLogEntry> signLogs = LogStorage.getSignLogsInRange(pos, 0, null);
-            java.util.List<LogStorage.LogEntry> containerLogs = LogStorage.getLogsInRange(pos, 0);
-            java.util.List<LogStorage.KillLogEntry> killLogs = LogStorage.getKillLogsInRange(pos, 0, null);
+            java.util.List<OptimizedLogStorage.BlockLogEntry> blockLogs = OptimizedLogStorage.getBlockLogsInRange(pos, 0, null);
+            java.util.List<OptimizedLogStorage.SignLogEntry> signLogs = OptimizedLogStorage.getSignLogsInRange(pos, 0, null);
+            java.util.List<OptimizedLogStorage.LogEntry> containerLogs = OptimizedLogStorage.getLogsInRange(pos, 0);
+            java.util.List<OptimizedLogStorage.KillLogEntry> killLogs = OptimizedLogStorage.getKillLogsInRange(pos, 0, null);
 
             boolean found = false;
             StringBuilder message = new StringBuilder(
                     "§6[Inspector] Block at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ":");
 
-            for (LogStorage.BlockLogEntry entry : blockLogs) {
+            for (OptimizedLogStorage.BlockLogEntry entry : blockLogs) {
                 message.append("\n§7").append(entry.action).append(" by ").append(entry.playerName).append(" - ")
                         .append(entry.blockId);
                 found = true;
             }
-            for (LogStorage.SignLogEntry entry : signLogs) {
+            for (OptimizedLogStorage.SignLogEntry entry : signLogs) {
                 message.append("\n§7Sign ").append(entry.action).append(" by ").append(entry.playerName);
                 found = true;
             }
-            for (LogStorage.LogEntry entry : containerLogs) {
+            for (OptimizedLogStorage.LogEntry entry : containerLogs) {
                 message.append("\n§7Container ").append(entry.action).append(" by ").append(entry.playerName);
                 found = true;
             }
-            for (LogStorage.KillLogEntry entry : killLogs) {
+            for (OptimizedLogStorage.KillLogEntry entry : killLogs) {
                 if (entry.pos.equals(pos)) {
                     message.append("\n§7Kill: ").append(entry.killerName).append(" -> ").append(entry.victimName);
                     found = true;
@@ -253,7 +253,7 @@ public class MixinServerPlayerInteractionManager {
             }
 
             return message.toString();
-        }, LogStorage.getAsyncExecutor()).thenAccept(message -> {
+        }, OptimizedLogStorage.getAsyncExecutor()).thenAccept(message -> {
             // Send message back on main thread
             player.sendMessage(net.minecraft.text.Text.literal(message), false);
         });
@@ -265,29 +265,29 @@ public class MixinServerPlayerInteractionManager {
 
         // Use async lookup to avoid blocking
         CompletableFuture.supplyAsync(() -> {
-            java.util.List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(pos, 0, null);
-            java.util.List<LogStorage.SignLogEntry> signLogs = LogStorage.getSignLogsInRange(pos, 0, null);
-            java.util.List<LogStorage.LogEntry> containerLogs = LogStorage.getLogsInRange(pos, 0);
-            java.util.List<LogStorage.KillLogEntry> killLogs = LogStorage.getKillLogsInRange(pos, 0, null);
+            java.util.List<OptimizedLogStorage.BlockLogEntry> blockLogs = OptimizedLogStorage.getBlockLogsInRange(pos, 0, null);
+            java.util.List<OptimizedLogStorage.SignLogEntry> signLogs = OptimizedLogStorage.getSignLogsInRange(pos, 0, null);
+            java.util.List<OptimizedLogStorage.LogEntry> containerLogs = OptimizedLogStorage.getLogsInRange(pos, 0);
+            java.util.List<OptimizedLogStorage.KillLogEntry> killLogs = OptimizedLogStorage.getKillLogsInRange(pos, 0, null);
 
             boolean found = false;
             StringBuilder message = new StringBuilder(
                     "§6[Inspector] Block at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ":");
 
-            for (LogStorage.BlockLogEntry entry : blockLogs) {
+            for (OptimizedLogStorage.BlockLogEntry entry : blockLogs) {
                 message.append("\n§7").append(entry.action).append(" by ").append(entry.playerName).append(" - ")
                         .append(entry.blockId);
                 found = true;
             }
-            for (LogStorage.SignLogEntry entry : signLogs) {
+            for (OptimizedLogStorage.SignLogEntry entry : signLogs) {
                 message.append("\n§7Sign ").append(entry.action).append(" by ").append(entry.playerName);
                 found = true;
             }
-            for (LogStorage.LogEntry entry : containerLogs) {
+            for (OptimizedLogStorage.LogEntry entry : containerLogs) {
                 message.append("\n§7Container ").append(entry.action).append(" by ").append(entry.playerName);
                 found = true;
             }
-            for (LogStorage.KillLogEntry entry : killLogs) {
+            for (OptimizedLogStorage.KillLogEntry entry : killLogs) {
                 if (entry.pos.equals(pos)) {
                     message.append("\n§7Kill: ").append(entry.killerName).append(" -> ").append(entry.victimName);
                     found = true;
@@ -299,7 +299,7 @@ public class MixinServerPlayerInteractionManager {
             }
 
             return message.toString();
-        }, LogStorage.getAsyncExecutor()).thenAccept(message -> {
+        }, OptimizedLogStorage.getAsyncExecutor()).thenAccept(message -> {
             // Send message back on main thread
             player.sendMessage(net.minecraft.text.Text.literal(message), false);
         });

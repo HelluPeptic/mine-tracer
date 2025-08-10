@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import com.minetracer.features.minetracer.LogStorage;
+import com.minetracer.features.minetracer.OptimizedLogStorage;
 import java.util.List;
 
 @Mixin(SignBlockEntity.class)
@@ -61,7 +61,7 @@ public class MixinSignBlockEntity {
             }
             com.google.gson.Gson gson = new com.google.gson.Gson();
             String nbt = String.format("{\"before\":%s,\"after\":%s}", gson.toJson(beforeArr), gson.toJson(afterArr));
-            LogStorage.logSignAction("edit", player, pos, gson.toJson(afterArr), nbt);
+            OptimizedLogStorage.logSignAction("edit", player, pos, gson.toJson(afterArr), nbt);
         }
         minetracer$beforeText = null;
     }

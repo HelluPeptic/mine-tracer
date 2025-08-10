@@ -16,7 +16,7 @@ public class KillEventListener {
             String killerName = killer.getName().getString();
             String victimName = killedEntity.getName().getString();
             BlockPos pos = killedEntity.getBlockPos();
-            LogStorage.logKillAction(killerName, victimName, pos, world.getRegistryKey().getValue().toString());
+            OptimizedLogStorage.logKillAction(killerName, victimName, pos, world.getRegistryKey().getValue().toString());
         });
     }
 }

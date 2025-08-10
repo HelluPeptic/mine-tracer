@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import com.minetracer.features.minetracer.LogStorage;
+import com.minetracer.features.minetracer.OptimizedLogStorage;
 
 import java.util.Objects;
 import java.util.HashMap;
@@ -38,7 +38,9 @@ public abstract class MixinScreenHandler {
 
     @Inject(method = "onSlotClick", at = @At("HEAD"))
     private void minetracer$logSlotClickHead(int slotIndex, int button,
-            net.minecraft.screen.slot.SlotActionType actionType, PlayerEntity player, CallbackInfo ci) {
+            SlotActionType actionType, PlayerEntity player, CallbackInfo ci) {
+        System.out.println("[MineTracer DEBUG] MixinScreenHandler onSlotClick called - slotIndex: " + slotIndex + ", button: " + button + ", actionType: " + actionType);
+        
         // Ultra-aggressive optimization: Rate limiting
         long currentTime = System.currentTimeMillis();
         if (currentTime - minetracer$lastInteractionTime < INTERACTION_COOLDOWN_MS) {
@@ -61,18 +63,24 @@ public abstract class MixinScreenHandler {
             return;
         }
 
-        // Skip if clicking on player inventory slots (most common case)
+        // Skip if clicking on player inventory slots, EXCEPT for QUICK_MOVE actions
+        // QUICK_MOVE (shift+click) from player inventory to container should still be tracked
         if (slotIndex >= 0 && slotIndex < self.slots.size()) {
             Slot clickedSlot = self.getSlot(slotIndex);
             if (clickedSlot.inventory == player.getInventory()) {
-                minetracer$isContainerInteraction = false;
-                return;
-            }
-            // Exclude Inmis backpacks by inventory class name
-            String invClass = clickedSlot.inventory.getClass().getName().toLowerCase();
-            if (invClass.contains("inmis") || invClass.contains("backpack")) {
-                minetracer$isContainerInteraction = false;
-                return;
+                // Only skip if it's NOT a QUICK_MOVE action
+                if (actionType != SlotActionType.QUICK_MOVE) {
+                    minetracer$isContainerInteraction = false;
+                    return;
+                }
+                // For QUICK_MOVE, we continue to track the interaction
+            } else {
+                // Exclude Inmis backpacks by inventory class name
+                String invClass = clickedSlot.inventory.getClass().getName().toLowerCase();
+                if (invClass.contains("inmis") || invClass.contains("backpack")) {
+                    minetracer$isContainerInteraction = false;
+                    return;
+                }
             }
         }
 
@@ -128,7 +136,7 @@ public abstract class MixinScreenHandler {
 
     @Inject(method = "onSlotClick", at = @At("RETURN"))
     private void minetracer$logSlotClickReturn(int slotIndex, int button,
-            net.minecraft.screen.slot.SlotActionType actionType, PlayerEntity player, CallbackInfo ci) {
+            SlotActionType actionType, PlayerEntity player, CallbackInfo ci) {
 
         // Quick exit if this wasn't a container interaction
         if (!minetracer$isContainerInteraction || minetracer$trackedSlots == null) {
@@ -181,21 +189,21 @@ public abstract class MixinScreenHandler {
                     // Items were deposited
                     ItemStack deposited = after.copy();
                     deposited.setCount(diff);
-                    LogStorage.logContainerAction("deposited", player, minetracer$containerPos, deposited);
+                    OptimizedLogStorage.logContainerAction("deposited", player, minetracer$containerPos, deposited);
                 } else {
                     // Items were withdrawn
                     ItemStack withdrew = before.copy();
                     withdrew.setCount(-diff);
-                    LogStorage.logContainerAction("withdrew", player, minetracer$containerPos, withdrew);
+                    OptimizedLogStorage.logContainerAction("withdrew", player, minetracer$containerPos, withdrew);
                 }
             }
         } else {
             // Different items: handle as separate withdraw and deposit
             if (!before.isEmpty()) {
-                LogStorage.logContainerAction("withdrew", player, minetracer$containerPos, before.copy());
+                OptimizedLogStorage.logContainerAction("withdrew", player, minetracer$containerPos, before.copy());
             }
             if (!after.isEmpty()) {
-                LogStorage.logContainerAction("deposited", player, minetracer$containerPos, after.copy());
+                OptimizedLogStorage.logContainerAction("deposited", player, minetracer$containerPos, after.copy());
             }
         }
     }

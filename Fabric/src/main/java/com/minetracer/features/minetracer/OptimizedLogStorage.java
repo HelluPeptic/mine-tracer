@@ -23,11 +23,10 @@ import com.google.gson.stream.JsonWriter;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.stream.Collectors;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
-import java.util.ArrayDeque;
-import java.util.Queue;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 
 // High-performance storage with async operations, spatial indexing, and caching
 public class OptimizedLogStorage {
@@ -138,12 +137,8 @@ public class OptimizedLogStorage {
     private static ExecutorService queryExecutor;
     private static ExecutorService indexingExecutor;
 
-    // Write batching system
-    private static final Queue<Runnable> pendingOperations = new ArrayDeque<>();
-    private static final int BATCH_SIZE = 100;
-
     // High-performance caching
-    private static com.github.benmanes.caffeine.cache.Cache<String, List<?>> queryCache;
+    private static Cache<String, List<?>> queryCache;
 
     private static final Gson GSON = new GsonBuilder()
             .setPrettyPrinting()
@@ -162,7 +157,7 @@ public class OptimizedLogStorage {
 
     static {
         // Initialize caches and thread pools
-        queryCache = com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+        queryCache = Caffeine.newBuilder()
                 .maximumSize(5000)
                 .expireAfterWrite(10, TimeUnit.MINUTES)
                 .build();
@@ -258,8 +253,11 @@ public class OptimizedLogStorage {
                 chunkKillLogs.clear();
 
                 Files.createDirectories(LOG_FILE.getParent());
+                System.out.println("[MineTracer] Looking for log file at: " + LOG_FILE.toString());
                 if (Files.exists(LOG_FILE)) {
+                    System.out.println("[MineTracer] Log file exists, loading...");
                     String json = Files.readString(LOG_FILE, StandardCharsets.UTF_8);
+                    System.out.println("[MineTracer] JSON content length: " + json.length());
                     Type type = new TypeToken<Map<String, Object>>() {
                     }.getType();
                     Map<String, Object> allLogs = GSON.fromJson(json, type);
@@ -268,6 +266,7 @@ public class OptimizedLogStorage {
                         // Load container logs with immediate indexing
                         List<Map<String, Object>> containerList = (List<Map<String, Object>>) allLogs
                                 .getOrDefault("container", new ArrayList<>());
+                        System.out.println("[MineTracer] Loading " + containerList.size() + " container entries");
                         for (Map<String, Object> obj : containerList) {
                             String[] posParts = ((String) obj.get("pos")).split(",");
                             BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]),
@@ -343,9 +342,12 @@ public class OptimizedLogStorage {
                             chunkKillLogs.computeIfAbsent(chunkKey, k -> new ArrayList<>()).add(entry);
                         }
                     }
+                } else {
+                    System.out.println("[MineTracer] No log file found, starting with empty storage");
                 }
                 hasUnsavedChanges = false;
                 logsLoaded = true;
+                System.out.println("[MineTracer] Loading complete: " + logs.size() + " container, " + blockLogs.size() + " block, " + signLogs.size() + " sign, " + killLogs.size() + " kill entries");
             } catch (Exception e) {
                 System.err.println("[MineTracer] Failed to load logs: " + e.getMessage());
                 e.printStackTrace();
@@ -361,6 +363,8 @@ public class OptimizedLogStorage {
         if (stack.isEmpty()) {
             return;
         }
+        
+        System.out.println("[MineTracer] Logging container action: " + action + " by " + player.getName().getString() + " at " + pos);
         
         LogEntry entry = new LogEntry(action, player.getName().getString(), pos, stack, Instant.now());
         

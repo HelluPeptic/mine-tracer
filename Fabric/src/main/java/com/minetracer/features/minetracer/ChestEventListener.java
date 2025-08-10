@@ -38,7 +38,7 @@ public class ChestEventListener {
                 for (int i = 0; i < inv.size(); i++) {
                     ItemStack stack = inv.getStack(i);
                     if (!stack.isEmpty()) {
-                        LogStorage.logContainerAction("withdrew", player, entityPos, stack);
+                        OptimizedLogStorage.logContainerAction("withdrew", player, entityPos, stack);
                     }
                 }
             }

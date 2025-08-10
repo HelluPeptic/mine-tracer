@@ -115,7 +115,7 @@ public class MineTracerCommand {
             
             // Add all players from logs (including offline players)
             try {
-                allPlayerNames.addAll(LogStorage.getAllPlayerNames());
+                allPlayerNames.addAll(OptimizedLogStorage.getAllPlayerNames());
             } catch (Exception e) {
                 // If we can't get log player names, just use online players
             }
@@ -346,30 +346,30 @@ public class MineTracerCommand {
             boolean filterByKiller = actionFilters.contains("kill");
 
             // Execute queries - use global search for user-specific lookups
-            CompletableFuture<List<LogStorage.BlockLogEntry>> blockLogsFuture;
-            CompletableFuture<List<LogStorage.SignLogEntry>> signLogsFuture;
-            CompletableFuture<List<LogStorage.LogEntry>> containerLogsFuture;
-            CompletableFuture<List<LogStorage.KillLogEntry>> killLogsFuture;
+            CompletableFuture<List<OptimizedLogStorage.BlockLogEntry>> blockLogsFuture;
+            CompletableFuture<List<OptimizedLogStorage.SignLogEntry>> signLogsFuture;
+            CompletableFuture<List<OptimizedLogStorage.LogEntry>> containerLogsFuture;
+            CompletableFuture<List<OptimizedLogStorage.KillLogEntry>> killLogsFuture;
 
             // If user is specified but no custom range, do global search
             if (hasUser && !hasRange) {
-                blockLogsFuture = LogStorage.getBlockLogsForUserAsync(userFilter);
-                signLogsFuture = LogStorage.getSignLogsForUserAsync(userFilter);
-                containerLogsFuture = LogStorage.getContainerLogsForUserAsync(userFilter);
-                killLogsFuture = LogStorage.getKillLogsForUserAsync(userFilter, filterByKiller);
+                blockLogsFuture = OptimizedLogStorage.getBlockLogsForUserAsync(userFilter);
+                signLogsFuture = OptimizedLogStorage.getSignLogsForUserAsync(userFilter);
+                containerLogsFuture = OptimizedLogStorage.getContainerLogsForUserAsync(userFilter);
+                killLogsFuture = OptimizedLogStorage.getKillLogsForUserAsync(userFilter, filterByKiller);
             } else {
                 // Use range-based search
-                blockLogsFuture = LogStorage.getBlockLogsInRangeAsync(playerPos, range, userFilter);
-                signLogsFuture = LogStorage.getSignLogsInRangeAsync(playerPos, range, userFilter);
-                containerLogsFuture = LogStorage.getLogsInRangeAsync(playerPos, range);
-                killLogsFuture = LogStorage.getKillLogsInRangeAsync(playerPos, range, userFilter, filterByKiller);
+                blockLogsFuture = OptimizedLogStorage.getBlockLogsInRangeAsync(playerPos, range, userFilter);
+                signLogsFuture = OptimizedLogStorage.getSignLogsInRangeAsync(playerPos, range, userFilter);
+                containerLogsFuture = OptimizedLogStorage.getLogsInRangeAsync(playerPos, range);
+                killLogsFuture = OptimizedLogStorage.getKillLogsInRangeAsync(playerPos, range, userFilter, filterByKiller);
             }
 
             try {
-                List<LogStorage.BlockLogEntry> blockLogs = blockLogsFuture.get();
-                List<LogStorage.SignLogEntry> signLogs = signLogsFuture.get();
-                List<LogStorage.LogEntry> containerLogs = containerLogsFuture.get();
-                List<LogStorage.KillLogEntry> killLogs = killLogsFuture.get();
+                List<OptimizedLogStorage.BlockLogEntry> blockLogs = blockLogsFuture.get();
+                List<OptimizedLogStorage.SignLogEntry> signLogs = signLogsFuture.get();
+                List<OptimizedLogStorage.LogEntry> containerLogs = containerLogsFuture.get();
+                List<OptimizedLogStorage.KillLogEntry> killLogs = killLogsFuture.get();
 
                 // Apply user filter to container logs (only needed for range-based search)
                 if (userFilter != null && !(hasUser && !hasRange)) {
@@ -408,35 +408,35 @@ public class MineTracerCommand {
 
                 // Combine and sort all logs by timestamp (most recent first)
                 List<FlatLogEntry> flatList = new ArrayList<>();
-                for (LogStorage.LogEntry entry : containerLogs) {
+                for (OptimizedLogStorage.LogEntry entry : containerLogs) {
                     flatList.add(new FlatLogEntry(entry, "container"));
                 }
-                for (LogStorage.BlockLogEntry entry : blockLogs) {
+                for (OptimizedLogStorage.BlockLogEntry entry : blockLogs) {
                     flatList.add(new FlatLogEntry(entry, "block"));
                 }
-                for (LogStorage.SignLogEntry entry : signLogs) {
+                for (OptimizedLogStorage.SignLogEntry entry : signLogs) {
                     flatList.add(new FlatLogEntry(entry, "sign"));
                 }
-                for (LogStorage.KillLogEntry entry : killLogs) {
+                for (OptimizedLogStorage.KillLogEntry entry : killLogs) {
                     flatList.add(new FlatLogEntry(entry, "kill"));
                 }
 
                 flatList.sort((a, b) -> {
-                    Instant aTime = a.entry instanceof LogStorage.LogEntry ? ((LogStorage.LogEntry) a.entry).timestamp
-                            : a.entry instanceof LogStorage.BlockLogEntry
-                                    ? ((LogStorage.BlockLogEntry) a.entry).timestamp
-                                    : a.entry instanceof LogStorage.SignLogEntry
-                                            ? ((LogStorage.SignLogEntry) a.entry).timestamp
-                                            : a.entry instanceof LogStorage.KillLogEntry
-                                                    ? ((LogStorage.KillLogEntry) a.entry).timestamp
+                    Instant aTime = a.entry instanceof OptimizedLogStorage.LogEntry ? ((OptimizedLogStorage.LogEntry) a.entry).timestamp
+                            : a.entry instanceof OptimizedLogStorage.BlockLogEntry
+                                    ? ((OptimizedLogStorage.BlockLogEntry) a.entry).timestamp
+                                    : a.entry instanceof OptimizedLogStorage.SignLogEntry
+                                            ? ((OptimizedLogStorage.SignLogEntry) a.entry).timestamp
+                                            : a.entry instanceof OptimizedLogStorage.KillLogEntry
+                                                    ? ((OptimizedLogStorage.KillLogEntry) a.entry).timestamp
                                                     : Instant.EPOCH;
-                    Instant bTime = b.entry instanceof LogStorage.LogEntry ? ((LogStorage.LogEntry) b.entry).timestamp
-                            : b.entry instanceof LogStorage.BlockLogEntry
-                                    ? ((LogStorage.BlockLogEntry) b.entry).timestamp
-                                    : b.entry instanceof LogStorage.SignLogEntry
-                                            ? ((LogStorage.SignLogEntry) b.entry).timestamp
-                                            : b.entry instanceof LogStorage.KillLogEntry
-                                                    ? ((LogStorage.KillLogEntry) b.entry).timestamp
+                    Instant bTime = b.entry instanceof OptimizedLogStorage.LogEntry ? ((OptimizedLogStorage.LogEntry) b.entry).timestamp
+                            : b.entry instanceof OptimizedLogStorage.BlockLogEntry
+                                    ? ((OptimizedLogStorage.BlockLogEntry) b.entry).timestamp
+                                    : b.entry instanceof OptimizedLogStorage.SignLogEntry
+                                            ? ((OptimizedLogStorage.SignLogEntry) b.entry).timestamp
+                                            : b.entry instanceof OptimizedLogStorage.KillLogEntry
+                                                    ? ((OptimizedLogStorage.KillLogEntry) b.entry).timestamp
                                                     : Instant.EPOCH;
                     return bTime.compareTo(aTime);
                 });
@@ -481,8 +481,8 @@ public class MineTracerCommand {
             source.sendFeedback(() -> formatLogEntryForChat(fle.entry), false);
 
             // For sign logs, also display before/after text
-            if (fle.entry instanceof LogStorage.SignLogEntry) {
-                LogStorage.SignLogEntry se = (LogStorage.SignLogEntry) fle.entry;
+            if (fle.entry instanceof OptimizedLogStorage.SignLogEntry) {
+                OptimizedLogStorage.SignLogEntry se = (OptimizedLogStorage.SignLogEntry) fle.entry;
                 if (se.action.equals("edit") && se.nbt != null && !se.nbt.isEmpty()) {
                     try {
                         com.google.gson.Gson gson = new com.google.gson.Gson();
@@ -523,8 +523,8 @@ public class MineTracerCommand {
     }
 
     public static Text formatLogEntryForChat(Object entry) {
-        if (entry instanceof LogStorage.LogEntry) {
-            LogStorage.LogEntry ce = (LogStorage.LogEntry) entry;
+        if (entry instanceof OptimizedLogStorage.LogEntry) {
+            OptimizedLogStorage.LogEntry ce = (OptimizedLogStorage.LogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(ce.timestamp, Instant.now()).getSeconds());
             String itemId = Registries.ITEM.getId(ce.stack.getItem()).toString();
             String itemName = ce.stack.getItem().getName().getString();
@@ -541,8 +541,8 @@ public class MineTracerCommand {
                 base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
             }
             return base;
-        } else if (entry instanceof LogStorage.BlockLogEntry) {
-            LogStorage.BlockLogEntry be = (LogStorage.BlockLogEntry) entry;
+        } else if (entry instanceof OptimizedLogStorage.BlockLogEntry) {
+            OptimizedLogStorage.BlockLogEntry be = (OptimizedLogStorage.BlockLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(be.timestamp, Instant.now()).getSeconds());
             net.minecraft.block.Block block = Registries.BLOCK.get(new Identifier(be.blockId));
             String blockName = block.getName().getString();
@@ -558,8 +558,8 @@ public class MineTracerCommand {
                 base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
             }
             return base;
-        } else if (entry instanceof LogStorage.SignLogEntry) {
-            LogStorage.SignLogEntry se = (LogStorage.SignLogEntry) entry;
+        } else if (entry instanceof OptimizedLogStorage.SignLogEntry) {
+            OptimizedLogStorage.SignLogEntry se = (OptimizedLogStorage.SignLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(se.timestamp, Instant.now()).getSeconds());
             boolean isRolledBack = se.rolledBack;
 
@@ -571,8 +571,8 @@ public class MineTracerCommand {
                 base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
             }
             return base;
-        } else if (entry instanceof LogStorage.KillLogEntry) {
-            LogStorage.KillLogEntry ke = (LogStorage.KillLogEntry) entry;
+        } else if (entry instanceof OptimizedLogStorage.KillLogEntry) {
+            OptimizedLogStorage.KillLogEntry ke = (OptimizedLogStorage.KillLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(ke.timestamp, Instant.now()).getSeconds());
             boolean isRolledBack = ke.rolledBack;
 
@@ -592,14 +592,14 @@ public class MineTracerCommand {
     public static Text formatCoordinatesForChat(Object entry) {
         BlockPos pos = null;
 
-        if (entry instanceof LogStorage.LogEntry) {
-            pos = ((LogStorage.LogEntry) entry).pos;
-        } else if (entry instanceof LogStorage.BlockLogEntry) {
-            pos = ((LogStorage.BlockLogEntry) entry).pos;
-        } else if (entry instanceof LogStorage.SignLogEntry) {
-            pos = ((LogStorage.SignLogEntry) entry).pos;
-        } else if (entry instanceof LogStorage.KillLogEntry) {
-            pos = ((LogStorage.KillLogEntry) entry).pos;
+        if (entry instanceof OptimizedLogStorage.LogEntry) {
+            pos = ((OptimizedLogStorage.LogEntry) entry).pos;
+        } else if (entry instanceof OptimizedLogStorage.BlockLogEntry) {
+            pos = ((OptimizedLogStorage.BlockLogEntry) entry).pos;
+        } else if (entry instanceof OptimizedLogStorage.SignLogEntry) {
+            pos = ((OptimizedLogStorage.SignLogEntry) entry).pos;
+        } else if (entry instanceof OptimizedLogStorage.KillLogEntry) {
+            pos = ((OptimizedLogStorage.KillLogEntry) entry).pos;
         }
 
         if (pos != null) {
@@ -674,12 +674,12 @@ public class MineTracerCommand {
             return Command.SINGLE_SUCCESS;
         }
         // Gather all logs
-        List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(playerPos, range, userFilter);
-        List<LogStorage.SignLogEntry> signLogs = LogStorage.getSignLogsInRange(playerPos, range, userFilter);
-        List<LogStorage.LogEntry> containerLogs = LogStorage.getLogsInRange(playerPos, range);
+        List<OptimizedLogStorage.BlockLogEntry> blockLogs = OptimizedLogStorage.getBlockLogsInRange(playerPos, range, userFilter);
+        List<OptimizedLogStorage.SignLogEntry> signLogs = OptimizedLogStorage.getSignLogsInRange(playerPos, range, userFilter);
+        List<OptimizedLogStorage.LogEntry> containerLogs = OptimizedLogStorage.getLogsInRange(playerPos, range);
         // For kill logs, filter by killer if action:kill, otherwise by victim
         boolean filterByKiller = actionFilters.contains("kill");
-        List<LogStorage.KillLogEntry> killLogs = LogStorage.getKillLogsInRange(playerPos, range, userFilter,
+        List<OptimizedLogStorage.KillLogEntry> killLogs = OptimizedLogStorage.getKillLogsInRange(playerPos, range, userFilter,
                 filterByKiller);
 
         // Apply user filter to container logs (since getLogsInRange doesn't accept
@@ -754,7 +754,7 @@ public class MineTracerCommand {
         // 3. Sign edits last
         if (actionFilters.isEmpty()) {
             // First: Restore broken blocks (especially containers)
-            for (LogStorage.BlockLogEntry entry : blockLogs) {
+            for (OptimizedLogStorage.BlockLogEntry entry : blockLogs) {
                 if ("broke".equals(entry.action) && !entry.rolledBack) {
                     if (performBlockPlaceRollback(world, entry)) {
                         entry.rolledBack = true;
@@ -765,7 +765,7 @@ public class MineTracerCommand {
                 }
             }
             // Second: Break placed blocks
-            for (LogStorage.BlockLogEntry entry : blockLogs) {
+            for (OptimizedLogStorage.BlockLogEntry entry : blockLogs) {
                 if ("placed".equals(entry.action) && !entry.rolledBack) {
                     if (performBlockBreakRollback(world, entry)) {
                         entry.rolledBack = true;
@@ -776,7 +776,7 @@ public class MineTracerCommand {
                 }
             }
             // Third: Process container actions (now that containers exist)
-            for (LogStorage.LogEntry entry : containerLogs) {
+            for (OptimizedLogStorage.LogEntry entry : containerLogs) {
                 if (!entry.rolledBack) {
                     if ("withdrew".equals(entry.action)) {
                         if (performWithdrawalRollback(world, entry)) {
@@ -796,7 +796,7 @@ public class MineTracerCommand {
                 }
             }
             // Fourth: Process sign rollbacks
-            for (LogStorage.SignLogEntry entry : signLogs) {
+            for (OptimizedLogStorage.SignLogEntry entry : signLogs) {
                 if ("edit".equals(entry.action) && !entry.rolledBack) {
                     if (performSignRollback(world, entry)) {
                         entry.rolledBack = true;
@@ -809,7 +809,7 @@ public class MineTracerCommand {
         } else {
             // When specific actions are requested, use original order
             // Process container rollbacks
-            for (LogStorage.LogEntry entry : containerLogs) {
+            for (OptimizedLogStorage.LogEntry entry : containerLogs) {
                 if (!entry.rolledBack) {
                     if ("withdrew".equals(entry.action)) {
                         if (performWithdrawalRollback(world, entry)) {
@@ -829,7 +829,7 @@ public class MineTracerCommand {
                 }
             }
             // Process block rollbacks (placed blocks -> break them, broken blocks -> restore them)
-            for (LogStorage.BlockLogEntry entry : blockLogs) {
+            for (OptimizedLogStorage.BlockLogEntry entry : blockLogs) {
                 if (!entry.rolledBack) {
                     if ("placed".equals(entry.action)) {
                         if (performBlockBreakRollback(world, entry)) {
@@ -849,7 +849,7 @@ public class MineTracerCommand {
                 }
             }
             // Process sign rollbacks (edit -> restore original text)
-            for (LogStorage.SignLogEntry entry : signLogs) {
+            for (OptimizedLogStorage.SignLogEntry entry : signLogs) {
                 if ("edit".equals(entry.action) && !entry.rolledBack) {
                     if (performSignRollback(world, entry)) {
                         entry.rolledBack = true;
@@ -878,7 +878,7 @@ public class MineTracerCommand {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static boolean performWithdrawalRollback(ServerWorld world, LogStorage.LogEntry entry) {
+    private static boolean performWithdrawalRollback(ServerWorld world, OptimizedLogStorage.LogEntry entry) {
         try {
             BlockPos pos = entry.pos;
             ItemStack stackToRestore = entry.stack.copy();
@@ -903,7 +903,7 @@ public class MineTracerCommand {
         }
     }
 
-    private static boolean performDepositRollback(ServerWorld world, LogStorage.LogEntry entry) {
+    private static boolean performDepositRollback(ServerWorld world, OptimizedLogStorage.LogEntry entry) {
         try {
             BlockPos pos = entry.pos;
             ItemStack stackToRemove = entry.stack.copy();
@@ -987,7 +987,7 @@ public class MineTracerCommand {
         return remaining;
     }
 
-    private static boolean performBlockBreakRollback(ServerWorld world, LogStorage.BlockLogEntry entry) {
+    private static boolean performBlockBreakRollback(ServerWorld world, OptimizedLogStorage.BlockLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
             // Break the placed block by setting it to air
@@ -999,7 +999,7 @@ public class MineTracerCommand {
         }
     }
 
-    private static boolean performBlockPlaceRollback(ServerWorld world, LogStorage.BlockLogEntry entry) {
+    private static boolean performBlockPlaceRollback(ServerWorld world, OptimizedLogStorage.BlockLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
             // Restore the broken block
@@ -1078,7 +1078,7 @@ public class MineTracerCommand {
         return state;
     }
 
-    private static boolean performSignRollback(ServerWorld world, LogStorage.SignLogEntry entry) {
+    private static boolean performSignRollback(ServerWorld world, OptimizedLogStorage.SignLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
 
@@ -1174,13 +1174,13 @@ public class MineTracerCommand {
         }
 
         ServerPlayerEntity player = source.getPlayer();
-        boolean isInspector = LogStorage.isInspectorMode(player);
+        boolean isInspector = OptimizedLogStorage.isInspectorMode(player);
 
         if (isInspector) {
-            LogStorage.setInspectorMode(player, false);
+            OptimizedLogStorage.setInspectorMode(player, false);
             source.sendFeedback(() -> Text.literal("Inspector mode disabled.").formatted(Formatting.YELLOW), false);
         } else {
-            LogStorage.setInspectorMode(player, true);
+            OptimizedLogStorage.setInspectorMode(player, true);
             source.sendFeedback(
                     () -> Text.literal("Inspector mode enabled. Right-click or break blocks to see their history.")
                             .formatted(Formatting.GREEN),
@@ -1201,7 +1201,7 @@ public class MineTracerCommand {
 
         // Force immediate save
         try {
-            LogStorage.forceSave();
+            OptimizedLogStorage.forceSave();
             source.sendFeedback(
                     () -> Text.literal("Successfully saved all log data to disk.").formatted(Formatting.GREEN), false);
         } catch (Exception e) {
