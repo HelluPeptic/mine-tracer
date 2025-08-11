@@ -137,8 +137,15 @@ public class OptimizedLogStorage {
     private static ExecutorService queryExecutor;
     private static ExecutorService indexingExecutor;
 
-    // High-performance caching
+    // High-performance caching with deferred invalidation
     private static Cache<String, List<?>> queryCache;
+    private static volatile boolean cacheInvalidationPending = false;
+    private static final ScheduledExecutorService cacheInvalidationExecutor = 
+        Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "MineTracer-CacheInvalidator");
+            t.setDaemon(true);
+            return t;
+        });
 
     private static final Gson GSON = new GsonBuilder()
             .setPrettyPrinting()
@@ -809,8 +816,14 @@ public class OptimizedLogStorage {
     }
 
     private static void invalidateQueryCache() {
-        // Only invalidate cache when new data is added, not on every query
-        queryCache.invalidateAll();
+        // Deferred cache invalidation to reduce overhead
+        if (!cacheInvalidationPending) {
+            cacheInvalidationPending = true;
+            cacheInvalidationExecutor.schedule(() -> {
+                queryCache.invalidateAll();
+                cacheInvalidationPending = false;
+            }, 100, TimeUnit.MILLISECONDS);
+        }
     }
 
     // Inspector mode state tracking
