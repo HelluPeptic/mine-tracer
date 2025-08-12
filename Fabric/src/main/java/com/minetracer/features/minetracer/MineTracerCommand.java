@@ -438,7 +438,7 @@ public class MineTracerCommand {
             String itemName = ce.stack.getItem().getName().getString();
             boolean isRolledBack = ce.rolledBack;
             Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
-                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
+                    .append(Text.literal(" ÔÇö ").formatted(Formatting.WHITE))
                     .append(Text.literal(ce.playerName).formatted(Formatting.AQUA))
                     .append(Text.literal(" " + ce.action + " ").formatted(Formatting.GREEN))
                     .append(Text.literal(ce.stack.getCount() + "x ").formatted(Formatting.WHITE))
@@ -455,7 +455,7 @@ public class MineTracerCommand {
             String blockName = block.getName().getString();
             boolean isRolledBack = be.rolledBack;
             Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
-                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
+                    .append(Text.literal(" ÔÇö ").formatted(Formatting.WHITE))
                     .append(Text.literal(be.playerName).formatted(Formatting.AQUA))
                     .append(Text.literal(" " + be.action + " block ").formatted(Formatting.GREEN))
                     .append(Text.literal("#" + be.blockId).formatted(Formatting.YELLOW))
@@ -469,7 +469,7 @@ public class MineTracerCommand {
             String timeAgo = getTimeAgo(Duration.between(se.timestamp, Instant.now()).getSeconds());
             boolean isRolledBack = se.rolledBack;
             Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
-                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
+                    .append(Text.literal(" ÔÇö ").formatted(Formatting.WHITE))
                     .append(Text.literal(se.playerName).formatted(Formatting.AQUA))
                     .append(Text.literal(" edited sign").formatted(Formatting.YELLOW));
             if (isRolledBack) {
@@ -481,7 +481,7 @@ public class MineTracerCommand {
             String timeAgo = getTimeAgo(Duration.between(ke.timestamp, Instant.now()).getSeconds());
             boolean isRolledBack = ke.rolledBack;
             Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
-                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
+                    .append(Text.literal(" ÔÇö ").formatted(Formatting.WHITE))
                     .append(Text.literal(ke.killerName).formatted(Formatting.AQUA))
                     .append(Text.literal(" killed ").formatted(Formatting.GREEN))
                     .append(Text.literal(ke.victimName).formatted(Formatting.RED));

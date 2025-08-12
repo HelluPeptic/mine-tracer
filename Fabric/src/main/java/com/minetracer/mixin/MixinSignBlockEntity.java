@@ -1,5 +1,4 @@
 package com.minetracer.mixin;
-
 import net.minecraft.block.entity.SignBlockEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
@@ -12,14 +11,12 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import com.minetracer.features.minetracer.OptimizedLogStorage;
 import java.util.List;
-
 @Mixin(SignBlockEntity.class)
 public class MixinSignBlockEntity {
     @Unique
     private String minetracer$beforeText = null;
     @Unique
     private boolean minetracer$editLogged = false;
-
     @Inject(method = "tryChangeText", at = @At("HEAD"))
     private void minetracer$cacheBeforeText(PlayerEntity player, boolean front, List messages, CallbackInfo ci) {
         SignBlockEntity sign = (SignBlockEntity) (Object) this;
@@ -34,7 +31,6 @@ public class MixinSignBlockEntity {
         minetracer$beforeText = beforeSb.toString();
         minetracer$editLogged = false;
     }
-
     @Inject(method = "tryChangeText", at = @At("TAIL"))
     private void minetracer$logSignEdit(PlayerEntity player, boolean front, List messages, CallbackInfo ci) {
         if (minetracer$editLogged)
@@ -43,7 +39,6 @@ public class MixinSignBlockEntity {
         SignBlockEntity sign = (SignBlockEntity) (Object) this;
         BlockPos pos = sign.getPos();
         if (sign.getWorld() instanceof ServerWorld) {
-            // After text (get actual sign text after edit)
             Text[] afterLines = sign.getText(front).getMessages(false);
             String[] afterArr = new String[afterLines.length];
             for (int i = 0; i < afterLines.length; i++) {
@@ -52,7 +47,6 @@ public class MixinSignBlockEntity {
             String[] beforeArr = minetracer$beforeText != null ? minetracer$beforeText.split("\\n", -1)
                     : new String[afterArr.length];
             if (beforeArr.length != afterArr.length) {
-                // Pad beforeArr to match afterArr length
                 String[] newBeforeArr = new String[afterArr.length];
                 for (int i = 0; i < afterArr.length; i++) {
                     newBeforeArr[i] = (i < beforeArr.length) ? beforeArr[i] : "";

@@ -166,28 +166,28 @@ public class MixinServerPlayerInteractionManager {
             java.util.List<OptimizedLogStorage.KillLogEntry> killLogs = OptimizedLogStorage.getKillLogsInRange(pos, 0, null);
             boolean found = false;
             StringBuilder message = new StringBuilder(
-                    "§6[Inspector] Block at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ":");
+                    "┬º6[Inspector] Block at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ":");
             for (OptimizedLogStorage.BlockLogEntry entry : blockLogs) {
-                message.append("\n§7").append(entry.action).append(" by ").append(entry.playerName).append(" - ")
+                message.append("\n┬º7").append(entry.action).append(" by ").append(entry.playerName).append(" - ")
                         .append(entry.blockId);
                 found = true;
             }
             for (OptimizedLogStorage.SignLogEntry entry : signLogs) {
-                message.append("\n§7Sign ").append(entry.action).append(" by ").append(entry.playerName);
+                message.append("\n┬º7Sign ").append(entry.action).append(" by ").append(entry.playerName);
                 found = true;
             }
             for (OptimizedLogStorage.LogEntry entry : containerLogs) {
-                message.append("\n§7Container ").append(entry.action).append(" by ").append(entry.playerName);
+                message.append("\n┬º7Container ").append(entry.action).append(" by ").append(entry.playerName);
                 found = true;
             }
             for (OptimizedLogStorage.KillLogEntry entry : killLogs) {
                 if (entry.pos.equals(pos)) {
-                    message.append("\n§7Kill: ").append(entry.killerName).append(" -> ").append(entry.victimName);
+                    message.append("\n┬º7Kill: ").append(entry.killerName).append(" -> ").append(entry.victimName);
                     found = true;
                 }
             }
             if (!found) {
-                message.append("\n§8No logged activity found.");
+                message.append("\n┬º8No logged activity found.");
             }
             return message.toString();
         }, OptimizedLogStorage.getAsyncExecutor()).thenAccept(message -> {
@@ -204,28 +204,28 @@ public class MixinServerPlayerInteractionManager {
             java.util.List<OptimizedLogStorage.KillLogEntry> killLogs = OptimizedLogStorage.getKillLogsInRange(pos, 0, null);
             boolean found = false;
             StringBuilder message = new StringBuilder(
-                    "§6[Inspector] Block at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ":");
+                    "┬º6[Inspector] Block at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ":");
             for (OptimizedLogStorage.BlockLogEntry entry : blockLogs) {
-                message.append("\n§7").append(entry.action).append(" by ").append(entry.playerName).append(" - ")
+                message.append("\n┬º7").append(entry.action).append(" by ").append(entry.playerName).append(" - ")
                         .append(entry.blockId);
                 found = true;
             }
             for (OptimizedLogStorage.SignLogEntry entry : signLogs) {
-                message.append("\n§7Sign ").append(entry.action).append(" by ").append(entry.playerName);
+                message.append("\n┬º7Sign ").append(entry.action).append(" by ").append(entry.playerName);
                 found = true;
             }
             for (OptimizedLogStorage.LogEntry entry : containerLogs) {
-                message.append("\n§7Container ").append(entry.action).append(" by ").append(entry.playerName);
+                message.append("\n┬º7Container ").append(entry.action).append(" by ").append(entry.playerName);
                 found = true;
             }
             for (OptimizedLogStorage.KillLogEntry entry : killLogs) {
                 if (entry.pos.equals(pos)) {
-                    message.append("\n§7Kill: ").append(entry.killerName).append(" -> ").append(entry.victimName);
+                    message.append("\n┬º7Kill: ").append(entry.killerName).append(" -> ").append(entry.victimName);
                     found = true;
                 }
             }
             if (!found) {
-                message.append("\n§8No logged activity found.");
+                message.append("\n┬º8No logged activity found.");
             }
             return message.toString();
         }, OptimizedLogStorage.getAsyncExecutor()).thenAccept(message -> {
