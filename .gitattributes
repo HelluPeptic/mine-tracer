@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Strip comments from Java files during commit, restore during checkout
+*.java filter=strip-comments
