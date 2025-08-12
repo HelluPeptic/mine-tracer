@@ -1,5 +1,4 @@
 package com.minetracer.mixin;
-
 import com.minetracer.features.minetracer.OptimizedLogStorage;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.network.ServerPlayerInteractionManager;
@@ -17,64 +16,45 @@ import net.minecraft.block.BlockState;
 import com.minetracer.mixin.ServerPlayerInteractionManagerAccessor;
 import com.google.gson.Gson;
 import java.util.concurrent.CompletableFuture;
-
 @Mixin(ServerPlayerInteractionManager.class)
 public class MixinServerPlayerInteractionManager {
     private static final Gson GSON = new Gson();
-
     @org.spongepowered.asm.mixin.Unique
     private BlockState minetracer$prevPlacedState = null;
-
     @org.spongepowered.asm.mixin.Unique
     private BlockState minetracer$prevBrokenState = null;
-
     @org.spongepowered.asm.mixin.Unique
     private BlockEntity minetracer$prevBrokenBlockEntity = null;
-
     @Inject(method = "interactBlock", at = @At("HEAD"))
     private void minetracer$cacheBlockPlaceState(ServerPlayerEntity player, net.minecraft.world.World world,
             net.minecraft.item.ItemStack stack, net.minecraft.util.Hand hand,
             net.minecraft.util.hit.BlockHitResult hitResult,
             CallbackInfoReturnable<net.minecraft.util.ActionResult> cir) {
-        // Store the block state before interaction
         BlockPos placedPos = hitResult.getBlockPos().offset(hitResult.getSide());
         this.minetracer$prevPlacedState = world.getBlockState(placedPos);
     }
-
     @Inject(method = "interactBlock", at = @At("RETURN"))
     private void minetracer$logBlockPlace(ServerPlayerEntity player, net.minecraft.world.World world,
             net.minecraft.item.ItemStack stack, net.minecraft.util.Hand hand,
             net.minecraft.util.hit.BlockHitResult hitResult,
             CallbackInfoReturnable<net.minecraft.util.ActionResult> cir) {
-        // Inspector mode check
         if (OptimizedLogStorage.isInspectorMode(player)) {
             minetracer$inspectorModeInteract(player, world, stack, hand, hitResult, cir);
             return;
         }
-
         BlockPos placedPos = hitResult.getBlockPos().offset(hitResult.getSide());
         BlockState placedState = world.getBlockState(placedPos);
         BlockState prevState = this.minetracer$prevPlacedState;
         this.minetracer$prevPlacedState = null;
-
-        // Only log if the block actually changed
         if (placedState.isAir() || (prevState != null && placedState.getBlock() == prevState.getBlock()))
             return;
-
-        // Use async logging to avoid blocking the main thread
         CompletableFuture.runAsync(() -> {
             try {
                 Identifier blockId = Registries.BLOCK.getId(placedState.getBlock());
                 net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(placedPos);
-
-                // Create NBT compound only if needed - most blocks don't need it
                 String nbt = null;
-                
-                // Only create NBT if block has properties or block entity data
                 if (!placedState.getProperties().isEmpty() || blockEntity != null) {
                     net.minecraft.nbt.NbtCompound fullNbt = new net.minecraft.nbt.NbtCompound();
-
-                    // Store block state properties only if they exist
                     if (!placedState.getProperties().isEmpty()) {
                         net.minecraft.nbt.NbtCompound propertiesNbt = new net.minecraft.nbt.NbtCompound();
                         for (net.minecraft.state.property.Property<?> property : placedState.getProperties()) {
@@ -84,19 +64,13 @@ public class MixinServerPlayerInteractionManager {
                         }
                         fullNbt.put("Properties", propertiesNbt);
                     }
-
-                    // Store block entity data if present
                     if (blockEntity != null) {
                         fullNbt.put("BlockEntityTag", blockEntity.createNbt());
                     }
-
                     nbt = fullNbt.toString();
                 }
-
-                // Check if this is a sign - if so, only log as sign action, not block action
                 if (blockEntity instanceof net.minecraft.block.entity.SignBlockEntity) {
                     net.minecraft.block.entity.SignBlockEntity sign = (net.minecraft.block.entity.SignBlockEntity) blockEntity;
-                    // Extract all visible lines as plain text
                     String[] lines = new String[4];
                     for (int i = 0; i < 4; i++) {
                         try {
@@ -108,66 +82,44 @@ public class MixinServerPlayerInteractionManager {
                     String beforeText = GSON.toJson(lines);
                     OptimizedLogStorage.logSignAction("placed", player, placedPos, beforeText, sign.createNbt().toString());
                 } else {
-                    // Log as block action for non-sign blocks
                     OptimizedLogStorage.logBlockAction("placed", player, placedPos, blockId.toString(), nbt);
                 }
             } catch (Exception e) {
-                System.err.println("[MineTracer] Error logging block place: " + e.getMessage());
             }
         }, OptimizedLogStorage.getAsyncExecutor());
     }
-
     @Inject(method = "tryBreakBlock", at = @At("HEAD"))
     private void minetracer$cacheBlockBreakState(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
         ServerPlayerEntity player = ((ServerPlayerInteractionManagerAccessor) this).getPlayer();
         net.minecraft.world.World world = player.getWorld();
-
-        // Cache the block state and block entity before it's broken
         this.minetracer$prevBrokenState = world.getBlockState(pos);
         this.minetracer$prevBrokenBlockEntity = world.getBlockEntity(pos);
     }
-
     @Inject(method = "tryBreakBlock", at = @At("RETURN"))
     private void minetracer$logBlockBreak(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
         ServerPlayerEntity player = ((ServerPlayerInteractionManagerAccessor) this).getPlayer();
-
-        // Only log if the block was actually broken (method returned true)
         if (!cir.getReturnValue()) {
             this.minetracer$prevBrokenState = null;
             this.minetracer$prevBrokenBlockEntity = null;
             return;
         }
-
         BlockState state = this.minetracer$prevBrokenState;
         BlockEntity blockEntity = this.minetracer$prevBrokenBlockEntity;
-
-        // Clear the cached values
         this.minetracer$prevBrokenState = null;
         this.minetracer$prevBrokenBlockEntity = null;
-
-        // Inspector mode check
         if (OptimizedLogStorage.isInspectorMode(player)) {
             minetracer$inspectorModeBreak(pos, cir);
             return;
         }
-
         if (state == null || state.isAir()) {
             return;
         }
-
-        // Use async logging to avoid blocking the main thread
         CompletableFuture.runAsync(() -> {
             try {
                 Identifier blockId = Registries.BLOCK.getId(state.getBlock());
-
-                // Create NBT compound only if needed - most blocks don't need it
                 String nbt = null;
-                
-                // Only create NBT if block has properties or block entity data
                 if (!state.getProperties().isEmpty() || blockEntity != null) {
                     net.minecraft.nbt.NbtCompound fullNbt = new net.minecraft.nbt.NbtCompound();
-
-                    // Store block state properties only if they exist
                     if (!state.getProperties().isEmpty()) {
                         net.minecraft.nbt.NbtCompound propertiesNbt = new net.minecraft.nbt.NbtCompound();
                         for (net.minecraft.state.property.Property<?> property : state.getProperties()) {
@@ -177,19 +129,13 @@ public class MixinServerPlayerInteractionManager {
                         }
                         fullNbt.put("Properties", propertiesNbt);
                     }
-
-                    // Store block entity data if present
                     if (blockEntity != null) {
                         fullNbt.put("BlockEntityTag", blockEntity.createNbt());
                     }
-
                     nbt = fullNbt.toString();
                 }
-
-                // Check if this is a sign - if so, only log as sign action, not block action
                 if (blockEntity instanceof SignBlockEntity) {
                     SignBlockEntity sign = (SignBlockEntity) blockEntity;
-                    // Extract all visible lines as plain text
                     String[] lines = new String[4];
                     for (int i = 0; i < 4; i++) {
                         try {
@@ -201,33 +147,26 @@ public class MixinServerPlayerInteractionManager {
                     String beforeText = GSON.toJson(lines);
                     OptimizedLogStorage.logSignAction("broke", player, pos, beforeText, sign.createNbt().toString());
                 } else {
-                    // Log as block action for non-sign blocks
                     OptimizedLogStorage.logBlockAction("broke", player, pos, blockId.toString(), nbt);
                 }
             } catch (Exception e) {
-                System.err.println("[MineTracer] Error logging block break: " + e.getMessage());
             }
         }, OptimizedLogStorage.getAsyncExecutor());
     }
-
     @org.spongepowered.asm.mixin.Unique
     private void minetracer$inspectorModeInteract(ServerPlayerEntity player, net.minecraft.world.World world,
             net.minecraft.item.ItemStack stack, net.minecraft.util.Hand hand,
             net.minecraft.util.hit.BlockHitResult hitResult,
             CallbackInfoReturnable<net.minecraft.util.ActionResult> cir) {
         BlockPos pos = hitResult.getBlockPos();
-
-        // Use async lookup to avoid blocking
         CompletableFuture.supplyAsync(() -> {
             java.util.List<OptimizedLogStorage.BlockLogEntry> blockLogs = OptimizedLogStorage.getBlockLogsInRange(pos, 0, null);
             java.util.List<OptimizedLogStorage.SignLogEntry> signLogs = OptimizedLogStorage.getSignLogsInRange(pos, 0, null);
             java.util.List<OptimizedLogStorage.LogEntry> containerLogs = OptimizedLogStorage.getLogsInRange(pos, 0);
             java.util.List<OptimizedLogStorage.KillLogEntry> killLogs = OptimizedLogStorage.getKillLogsInRange(pos, 0, null);
-
             boolean found = false;
             StringBuilder message = new StringBuilder(
                     "§6[Inspector] Block at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ":");
-
             for (OptimizedLogStorage.BlockLogEntry entry : blockLogs) {
                 message.append("\n§7").append(entry.action).append(" by ").append(entry.playerName).append(" - ")
                         .append(entry.blockId);
@@ -247,33 +186,25 @@ public class MixinServerPlayerInteractionManager {
                     found = true;
                 }
             }
-
             if (!found) {
                 message.append("\n§8No logged activity found.");
             }
-
             return message.toString();
         }, OptimizedLogStorage.getAsyncExecutor()).thenAccept(message -> {
-            // Send message back on main thread
             player.sendMessage(net.minecraft.text.Text.literal(message), false);
         });
     }
-
     @org.spongepowered.asm.mixin.Unique
     private void minetracer$inspectorModeBreak(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
         ServerPlayerEntity player = ((ServerPlayerInteractionManagerAccessor) this).getPlayer();
-
-        // Use async lookup to avoid blocking
         CompletableFuture.supplyAsync(() -> {
             java.util.List<OptimizedLogStorage.BlockLogEntry> blockLogs = OptimizedLogStorage.getBlockLogsInRange(pos, 0, null);
             java.util.List<OptimizedLogStorage.SignLogEntry> signLogs = OptimizedLogStorage.getSignLogsInRange(pos, 0, null);
             java.util.List<OptimizedLogStorage.LogEntry> containerLogs = OptimizedLogStorage.getLogsInRange(pos, 0);
             java.util.List<OptimizedLogStorage.KillLogEntry> killLogs = OptimizedLogStorage.getKillLogsInRange(pos, 0, null);
-
             boolean found = false;
             StringBuilder message = new StringBuilder(
                     "§6[Inspector] Block at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + ":");
-
             for (OptimizedLogStorage.BlockLogEntry entry : blockLogs) {
                 message.append("\n§7").append(entry.action).append(" by ").append(entry.playerName).append(" - ")
                         .append(entry.blockId);
@@ -293,14 +224,11 @@ public class MixinServerPlayerInteractionManager {
                     found = true;
                 }
             }
-
             if (!found) {
                 message.append("\n§8No logged activity found.");
             }
-
             return message.toString();
         }, OptimizedLogStorage.getAsyncExecutor()).thenAccept(message -> {
-            // Send message back on main thread
             player.sendMessage(net.minecraft.text.Text.literal(message), false);
         });
     }
