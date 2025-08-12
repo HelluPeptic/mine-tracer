@@ -21,7 +21,7 @@ public abstract class MixinScreenHandler {
     private BlockPos minetracer$containerPos = null;
     private boolean minetracer$hasRelevantSlots = false;
     private static long minetracer$lastInteractionTime = 0;
-    private static final long INTERACTION_COOLDOWN_MS = 50; // Only track every 50ms
+    private static final long INTERACTION_COOLDOWN_MS = 10; // Only track every X ms
     private boolean minetracer$isInmisBackpack(ScreenHandler handler) {
         if (handler == null)
             return false;
@@ -118,13 +118,13 @@ public abstract class MixinScreenHandler {
     }
     private void minetracer$processSlotChange(PlayerEntity player, ItemStack before, ItemStack after) {
         if (before == after)
-            return; // Same object reference
+            return;
         if (before.isEmpty() && after.isEmpty())
-            return; // Both empty
+            return;
         boolean sameItem = ItemStack.areItemsEqual(before, after) && Objects.equals(before.getNbt(), after.getNbt());
         if (sameItem) {
             int diff = after.getCount() - before.getCount();
-            if (diff != 0) { // Only log if quantity actually changed
+            if (diff != 0) {
                 if (diff > 0) {
                     ItemStack deposited = after.copy();
                     deposited.setCount(diff);
