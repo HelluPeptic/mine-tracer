@@ -6,6 +6,8 @@
     "MixinScreenHandler",
     "MixinServerPlayerInteractionManager",
     "MixinSignBlockEntity",
+    "MixinItemEntity",
+    "MixinPlayerEntityDrop",
     "ServerPlayerInteractionManagerAccessor"
   ],
   "injectors": {

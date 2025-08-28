@@ -94,18 +94,38 @@ public class OptimizedLogStorage {
             this.timestamp = timestamp;
         }
     }
+    public static class ItemPickupDropLogEntry {
+        public final String action; // "pickup" or "drop"
+        public final String playerName;
+        public final BlockPos pos;
+        public final ItemStack stack;
+        public final String world;
+        public final Instant timestamp;
+        public boolean rolledBack = false;
+        public ItemPickupDropLogEntry(String action, String playerName, BlockPos pos, ItemStack stack, String world, Instant timestamp) {
+            this.action = action;
+            this.playerName = playerName;
+            this.pos = pos;
+            this.stack = stack.copy(); // Defensive copy for thread safety
+            this.world = world;
+            this.timestamp = timestamp;
+        }
+    }
     private static final List<LogEntry> logs = new ArrayList<>();
     private static final List<BlockLogEntry> blockLogs = new ArrayList<>();
     private static final List<SignLogEntry> signLogs = new ArrayList<>();
     private static final List<KillLogEntry> killLogs = new ArrayList<>();
+    private static final List<ItemPickupDropLogEntry> itemPickupDropLogs = new ArrayList<>();
     private static final Object2ObjectOpenHashMap<String, List<LogEntry>> playerContainerLogs = new Object2ObjectOpenHashMap<>();
     private static final Object2ObjectOpenHashMap<String, List<BlockLogEntry>> playerBlockLogs = new Object2ObjectOpenHashMap<>();
     private static final Object2ObjectOpenHashMap<String, List<SignLogEntry>> playerSignLogs = new Object2ObjectOpenHashMap<>();
     private static final Object2ObjectOpenHashMap<String, List<KillLogEntry>> playerKillLogs = new Object2ObjectOpenHashMap<>();
+    private static final Object2ObjectOpenHashMap<String, List<ItemPickupDropLogEntry>> playerItemLogs = new Object2ObjectOpenHashMap<>();
     private static final Long2ObjectOpenHashMap<List<LogEntry>> chunkContainerLogs = new Long2ObjectOpenHashMap<>();
     private static final Long2ObjectOpenHashMap<List<BlockLogEntry>> chunkBlockLogs = new Long2ObjectOpenHashMap<>();
     private static final Long2ObjectOpenHashMap<List<SignLogEntry>> chunkSignLogs = new Long2ObjectOpenHashMap<>();
     private static final Long2ObjectOpenHashMap<List<KillLogEntry>> chunkKillLogs = new Long2ObjectOpenHashMap<>();
+    private static final Long2ObjectOpenHashMap<List<ItemPickupDropLogEntry>> chunkItemLogs = new Long2ObjectOpenHashMap<>();
     private static final Path LOG_FILE = Path.of("config", "minetracer", "logs.json");
     private static final ReadWriteLock dataLock = new ReentrantReadWriteLock();
     private static final Object saveLock = new Object();
@@ -200,6 +220,18 @@ public class OptimizedLogStorage {
             }
         });
     }
+    private static void indexItemLogEntryAsync(ItemPickupDropLogEntry entry) {
+        indexingExecutor.submit(() -> {
+            dataLock.writeLock().lock();
+            try {
+                playerItemLogs.computeIfAbsent(entry.playerName, k -> new ArrayList<>()).add(entry);
+                long chunkKey = getChunkKey(entry.pos);
+                chunkItemLogs.computeIfAbsent(chunkKey, k -> new ArrayList<>()).add(entry);
+            } finally {
+                dataLock.writeLock().unlock();
+            }
+        });
+    }
     private static CompletableFuture<Void> loadAllLogsAsync() {
         return CompletableFuture.runAsync(() -> {
             dataLock.writeLock().lock();
@@ -209,14 +241,17 @@ public class OptimizedLogStorage {
                 blockLogs.clear();
                 signLogs.clear();
                 killLogs.clear();
+                itemPickupDropLogs.clear();
                 playerContainerLogs.clear();
                 playerBlockLogs.clear();
                 playerSignLogs.clear();
                 playerKillLogs.clear();
+                playerItemLogs.clear();
                 chunkContainerLogs.clear();
                 chunkBlockLogs.clear();
                 chunkSignLogs.clear();
                 chunkKillLogs.clear();
+                chunkItemLogs.clear();
                 Files.createDirectories(LOG_FILE.getParent());
                 if (Files.exists(LOG_FILE)) {
                     String json = Files.readString(LOG_FILE, StandardCharsets.UTF_8);
@@ -287,6 +322,26 @@ public class OptimizedLogStorage {
                             long chunkKey = getChunkKey(entry.pos);
                             chunkKillLogs.computeIfAbsent(chunkKey, k -> new ArrayList<>()).add(entry);
                         }
+                        List<Map<String, Object>> itemPickupDropList = (List<Map<String, Object>>) allLogs.getOrDefault("itemPickupDrop",
+                                new ArrayList<>());
+                        for (Map<String, Object> obj : itemPickupDropList) {
+                            try {
+                                String[] posParts = ((String) obj.get("pos")).split(",");
+                                BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]),
+                                        Integer.parseInt(posParts[2]));
+                                net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader
+                                        .parse((String) obj.get("itemNbt"));
+                                ItemStack stack = ItemStack.fromNbt(nbt);
+                                ItemPickupDropLogEntry entry = new ItemPickupDropLogEntry((String) obj.get("action"),
+                                        (String) obj.get("playerName"), pos, stack, (String) obj.get("world"),
+                                        java.time.Instant.parse((String) obj.get("timestamp")));
+                                itemPickupDropLogs.add(entry);
+                                playerItemLogs.computeIfAbsent(entry.playerName, k -> new ArrayList<>()).add(entry);
+                                long chunkKey = getChunkKey(entry.pos);
+                                chunkItemLogs.computeIfAbsent(chunkKey, k -> new ArrayList<>()).add(entry);
+                            } catch (Exception nbtEx) {
+                            }
+                        }
                     }
                 } else {
                 }
@@ -352,6 +407,23 @@ public class OptimizedLogStorage {
         }
         indexKillLogEntryAsync(entry);
         invalidateQueryCache();
+    }
+    public static void logItemPickupDropAction(String action, PlayerEntity player, BlockPos pos, ItemStack stack, String world) {
+        if (stack.isEmpty() || player == null) {
+            return;
+        }
+        ItemPickupDropLogEntry entry = new ItemPickupDropLogEntry(action, player.getName().getString(), pos, stack, world, Instant.now());
+        getAsyncExecutor().execute(() -> {
+            dataLock.writeLock().lock();
+            try {
+                itemPickupDropLogs.add(entry);
+                hasUnsavedChanges = true;
+            } finally {
+                dataLock.writeLock().unlock();
+            }
+            indexItemLogEntryAsync(entry);
+            invalidateQueryCache();
+        });
     }
     public static void logInventoryAction(String action, PlayerEntity player, ItemStack stack) {
         logContainerAction(action, player, BlockPos.ORIGIN, stack);
@@ -626,6 +698,74 @@ public class OptimizedLogStorage {
             }
         }, queryExecutor);
     }
+    public static CompletableFuture<List<ItemPickupDropLogEntry>> getItemPickupDropLogsForUserAsync(String userFilter) {
+        return CompletableFuture.supplyAsync(() -> {
+            ensureLogsLoaded(); // Ensure logs are loaded before querying
+            if (userFilter == null || userFilter.isEmpty()) {
+                return new ArrayList<>();
+            }
+            String cacheKey = "item_user_" + userFilter;
+            List<ItemPickupDropLogEntry> cached = (List<ItemPickupDropLogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+            dataLock.readLock().lock();
+            try {
+                List<ItemPickupDropLogEntry> result = new ArrayList<>();
+                for (Map.Entry<String, List<ItemPickupDropLogEntry>> playerEntry : playerItemLogs.entrySet()) {
+                    if (playerEntry.getKey().equalsIgnoreCase(userFilter)) {
+                        result.addAll(playerEntry.getValue());
+                        break; // Found the player, no need to continue
+                    }
+                }
+                queryCache.put(cacheKey, result);
+                return result;
+            } finally {
+                dataLock.readLock().unlock();
+            }
+        }, queryExecutor);
+    }
+    public static CompletableFuture<List<ItemPickupDropLogEntry>> getItemPickupDropLogsInRangeAsync(BlockPos center, int range, String userFilter) {
+        return CompletableFuture.supplyAsync(() -> {
+            ensureLogsLoaded(); // Ensure logs are loaded before querying
+            String cacheKey = "item_pickup_drop_" + center + "_" + range + "_" + userFilter;
+            @SuppressWarnings("unchecked")
+            List<ItemPickupDropLogEntry> cached = (List<ItemPickupDropLogEntry>) queryCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+            dataLock.readLock().lock();
+            try {
+                List<ItemPickupDropLogEntry> result = new ArrayList<>();
+                int r2 = range * range;
+                int chunkRange = (range >> 4) + 1;
+                int centerChunkX = center.getX() >> 4;
+                int centerChunkZ = center.getZ() >> 4;
+                for (int cx = centerChunkX - chunkRange; cx <= centerChunkX + chunkRange; cx++) {
+                    for (int cz = centerChunkZ - chunkRange; cz <= centerChunkZ + chunkRange; cz++) {
+                        long chunkKey = ((long) cx << 32) | ((long) cz & 0xFFFFFFFFL);
+                        List<ItemPickupDropLogEntry> chunkEntries = chunkItemLogs.get(chunkKey);
+                        if (chunkEntries != null) {
+                            for (ItemPickupDropLogEntry entry : chunkEntries) {
+                                boolean userMatch = (userFilter == null || userFilter.isEmpty()) || 
+                                                    entry.playerName.equalsIgnoreCase(userFilter);
+                                if (userMatch) {
+                                    double distance = entry.pos.getSquaredDistance(center);
+                                    if (distance <= r2) {
+                                        result.add(entry);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                queryCache.put(cacheKey, result);
+                return result;
+            } finally {
+                dataLock.readLock().unlock();
+            }
+        }, queryExecutor);
+    }
     public static List<BlockLogEntry> getBlockLogsInRange(BlockPos center, int range, String userFilter) {
         try {
             return getBlockLogsInRangeAsync(center, range, userFilter).get();
@@ -694,6 +834,15 @@ public class OptimizedLogStorage {
             dataLock.readLock().unlock();
         }
     }
+    public static List<ItemPickupDropLogEntry> getAllItemPickupDropLogs() {
+        ensureLogsLoaded();
+        dataLock.readLock().lock();
+        try {
+            return new ArrayList<>(itemPickupDropLogs);
+        } finally {
+            dataLock.readLock().unlock();
+        }
+    }
     public static List<String> getAllPlayerNames() {
         ensureLogsLoaded(); // Ensure logs are loaded before querying
         dataLock.readLock().lock();
@@ -703,6 +852,7 @@ public class OptimizedLogStorage {
             names.addAll(playerBlockLogs.keySet());
             names.addAll(playerSignLogs.keySet());
             names.addAll(playerKillLogs.keySet());
+            names.addAll(playerItemLogs.keySet());
             return new java.util.ArrayList<>(names);
         } finally {
             dataLock.readLock().unlock();
@@ -765,6 +915,10 @@ public class OptimizedLogStorage {
                         for (KillLogEntry entry : killLogs)
                             killList.add(new KillLogEntryJson(entry));
                         allLogs.put("kill", killList);
+                        List<Object> itemPickupDropList = new ArrayList<>();
+                        for (ItemPickupDropLogEntry entry : itemPickupDropLogs)
+                            itemPickupDropList.add(new ItemPickupDropLogEntryJson(entry));
+                        allLogs.put("itemPickupDrop", itemPickupDropList);
                     } finally {
                         dataLock.readLock().unlock();
                     }
@@ -834,6 +988,22 @@ public class OptimizedLogStorage {
             this.killerName = entry.killerName;
             this.victimName = entry.victimName;
             this.pos = entry.pos.getX() + "," + entry.pos.getY() + "," + entry.pos.getZ();
+            this.world = entry.world;
+            this.timestamp = entry.timestamp.toString();
+        }
+    }
+    private static class ItemPickupDropLogEntryJson {
+        String action;
+        String playerName;
+        String pos;
+        String itemNbt;
+        String world;
+        String timestamp;
+        ItemPickupDropLogEntryJson(ItemPickupDropLogEntry entry) {
+            this.action = entry.action;
+            this.playerName = entry.playerName;
+            this.pos = entry.pos.getX() + "," + entry.pos.getY() + "," + entry.pos.getZ();
+            this.itemNbt = entry.stack.writeNbt(new net.minecraft.nbt.NbtCompound()).toString();
             this.world = entry.world;
             this.timestamp = entry.timestamp.toString();
         }

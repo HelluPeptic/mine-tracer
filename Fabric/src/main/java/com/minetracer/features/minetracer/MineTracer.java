@@ -4,6 +4,7 @@ public class MineTracer {
         KillEventListener.register();
         OptimizedChestEventListener.register(); // For container breaking
         ContainerInteractionListener.register(); // For container interactions (deposits/withdrawals)
+        ItemPickupDropEventListener.register(); // For item pickup/drop tracking
         MineTracerCommand.register();
     }
 }

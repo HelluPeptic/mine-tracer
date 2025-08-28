@@ -6,6 +6,7 @@ Advanced block and container logging mod with rollback functionality for Minecra
 
 - **Block Logging**: Track block break/place actions with full NBT support
 - **Container Logging**: Monitor chest, furnace, and other container interactions
+- **Item Pickup/Drop Logging**: Track when players pick up or drop items
 - **Sign Editing**: Log sign text changes with before/after comparison
 - **Kill Logging**: Record player vs player/mob combat events
 - **Advanced Query System**: Filter logs by user, time, range, action type, and items
@@ -26,7 +27,7 @@ Advanced block and container logging mod with rollback functionality for Minecra
 - `user:<player>` - Filter by player name
 - `time:<duration>` - Filter by time (e.g., 1h, 30m, 2d)
 - `range:<blocks>` - Filter by radius in blocks
-- `action:<type>` - Filter by action type (broke, placed, withdrew, deposited, kill)
+- `action:<type>` - Filter by action type (broke, placed, withdrew, deposited, pickup, drop, kill)
 - `include:<item>` - Filter by specific item/block ID
 
 ## Permissions

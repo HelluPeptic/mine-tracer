@@ -106,7 +106,7 @@ public class MineTracerCommand {
             }
         } else if (currentTyping.startsWith("action:")) {
             String actionPart = currentTyping.substring(7);
-            String[] actions = { "withdrew", "deposited", "broke", "placed", "sign", "kill" };
+            String[] actions = { "withdrew", "deposited", "broke", "placed", "pickup", "drop", "sign", "kill" };
             String beforeCurrent = remaining.substring(0, remaining.lastIndexOf(currentTyping));
             int lastComma = actionPart.lastIndexOf(',');
             String currentAction = lastComma >= 0 ? actionPart.substring(lastComma + 1) : actionPart;
@@ -292,22 +292,26 @@ public class MineTracerCommand {
             CompletableFuture<List<OptimizedLogStorage.SignLogEntry>> signLogsFuture;
             CompletableFuture<List<OptimizedLogStorage.LogEntry>> containerLogsFuture;
             CompletableFuture<List<OptimizedLogStorage.KillLogEntry>> killLogsFuture;
+            CompletableFuture<List<OptimizedLogStorage.ItemPickupDropLogEntry>> itemLogsFuture;
             if (hasUser && !hasRange) {
                 blockLogsFuture = OptimizedLogStorage.getBlockLogsForUserAsync(userFilter);
                 signLogsFuture = OptimizedLogStorage.getSignLogsForUserAsync(userFilter);
                 containerLogsFuture = OptimizedLogStorage.getContainerLogsForUserAsync(userFilter);
                 killLogsFuture = OptimizedLogStorage.getKillLogsForUserAsync(userFilter, filterByKiller);
+                itemLogsFuture = OptimizedLogStorage.getItemPickupDropLogsForUserAsync(userFilter);
             } else {
                 blockLogsFuture = OptimizedLogStorage.getBlockLogsInRangeAsync(playerPos, range, userFilter);
                 signLogsFuture = OptimizedLogStorage.getSignLogsInRangeAsync(playerPos, range, userFilter);
                 containerLogsFuture = OptimizedLogStorage.getLogsInRangeAsync(playerPos, range);
                 killLogsFuture = OptimizedLogStorage.getKillLogsInRangeAsync(playerPos, range, userFilter, filterByKiller);
+                itemLogsFuture = OptimizedLogStorage.getItemPickupDropLogsInRangeAsync(playerPos, range, userFilter);
             }
             try {
                 List<OptimizedLogStorage.BlockLogEntry> blockLogs = blockLogsFuture.get();
                 List<OptimizedLogStorage.SignLogEntry> signLogs = signLogsFuture.get();
                 List<OptimizedLogStorage.LogEntry> containerLogs = containerLogsFuture.get();
                 List<OptimizedLogStorage.KillLogEntry> killLogs = killLogsFuture.get();
+                List<OptimizedLogStorage.ItemPickupDropLogEntry> itemLogs = itemLogsFuture.get();
                 if (userFilter != null && !(hasUser && !hasRange)) {
                     final String userFilterFinal = userFilter;
                     containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
@@ -318,6 +322,7 @@ public class MineTracerCommand {
                     signLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
                     containerLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
                     killLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+                    itemLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
                 }
                 if (!actionFilters.isEmpty()) {
                     containerLogs.removeIf(
@@ -327,6 +332,8 @@ public class MineTracerCommand {
                     signLogs.removeIf(
                             entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
                     killLogs.removeIf(
+                            entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
+                    itemLogs.removeIf(
                             entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
                 }
                 if (includeItem != null && !includeItem.isEmpty()) {
@@ -348,6 +355,9 @@ public class MineTracerCommand {
                 for (OptimizedLogStorage.KillLogEntry entry : killLogs) {
                     flatList.add(new FlatLogEntry(entry, "kill"));
                 }
+                for (OptimizedLogStorage.ItemPickupDropLogEntry entry : itemLogs) {
+                    flatList.add(new FlatLogEntry(entry, "item"));
+                }
                 flatList.sort((a, b) -> {
                     Instant aTime = a.entry instanceof OptimizedLogStorage.LogEntry ? ((OptimizedLogStorage.LogEntry) a.entry).timestamp
                             : a.entry instanceof OptimizedLogStorage.BlockLogEntry
@@ -356,7 +366,9 @@ public class MineTracerCommand {
                                             ? ((OptimizedLogStorage.SignLogEntry) a.entry).timestamp
                                             : a.entry instanceof OptimizedLogStorage.KillLogEntry
                                                     ? ((OptimizedLogStorage.KillLogEntry) a.entry).timestamp
-                                                    : Instant.EPOCH;
+                                                    : a.entry instanceof OptimizedLogStorage.ItemPickupDropLogEntry
+                                                            ? ((OptimizedLogStorage.ItemPickupDropLogEntry) a.entry).timestamp
+                                                            : Instant.EPOCH;
                     Instant bTime = b.entry instanceof OptimizedLogStorage.LogEntry ? ((OptimizedLogStorage.LogEntry) b.entry).timestamp
                             : b.entry instanceof OptimizedLogStorage.BlockLogEntry
                                     ? ((OptimizedLogStorage.BlockLogEntry) b.entry).timestamp
@@ -364,7 +376,9 @@ public class MineTracerCommand {
                                             ? ((OptimizedLogStorage.SignLogEntry) b.entry).timestamp
                                             : b.entry instanceof OptimizedLogStorage.KillLogEntry
                                                     ? ((OptimizedLogStorage.KillLogEntry) b.entry).timestamp
-                                                    : Instant.EPOCH;
+                                                    : b.entry instanceof OptimizedLogStorage.ItemPickupDropLogEntry
+                                                            ? ((OptimizedLogStorage.ItemPickupDropLogEntry) b.entry).timestamp
+                                                            : Instant.EPOCH;
                     return bTime.compareTo(aTime);
                 });
                 return flatList;
@@ -438,7 +452,7 @@ public class MineTracerCommand {
             String itemName = ce.stack.getItem().getName().getString();
             boolean isRolledBack = ce.rolledBack;
             Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
-                    .append(Text.literal(" ÔÇö ").formatted(Formatting.WHITE))
+                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
                     .append(Text.literal(ce.playerName).formatted(Formatting.AQUA))
                     .append(Text.literal(" " + ce.action + " ").formatted(Formatting.GREEN))
                     .append(Text.literal(ce.stack.getCount() + "x ").formatted(Formatting.WHITE))
@@ -455,7 +469,7 @@ public class MineTracerCommand {
             String blockName = block.getName().getString();
             boolean isRolledBack = be.rolledBack;
             Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
-                    .append(Text.literal(" ÔÇö ").formatted(Formatting.WHITE))
+                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
                     .append(Text.literal(be.playerName).formatted(Formatting.AQUA))
                     .append(Text.literal(" " + be.action + " block ").formatted(Formatting.GREEN))
                     .append(Text.literal("#" + be.blockId).formatted(Formatting.YELLOW))
@@ -469,7 +483,7 @@ public class MineTracerCommand {
             String timeAgo = getTimeAgo(Duration.between(se.timestamp, Instant.now()).getSeconds());
             boolean isRolledBack = se.rolledBack;
             Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
-                    .append(Text.literal(" ÔÇö ").formatted(Formatting.WHITE))
+                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
                     .append(Text.literal(se.playerName).formatted(Formatting.AQUA))
                     .append(Text.literal(" edited sign").formatted(Formatting.YELLOW));
             if (isRolledBack) {
@@ -481,13 +495,26 @@ public class MineTracerCommand {
             String timeAgo = getTimeAgo(Duration.between(ke.timestamp, Instant.now()).getSeconds());
             boolean isRolledBack = ke.rolledBack;
             Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
-                    .append(Text.literal(" ÔÇö ").formatted(Formatting.WHITE))
+                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
                     .append(Text.literal(ke.killerName).formatted(Formatting.AQUA))
                     .append(Text.literal(" killed ").formatted(Formatting.GREEN))
                     .append(Text.literal(ke.victimName).formatted(Formatting.RED));
             if (isRolledBack) {
                 base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
             }
+            return base;
+        } else if (entry instanceof OptimizedLogStorage.ItemPickupDropLogEntry) {
+            OptimizedLogStorage.ItemPickupDropLogEntry ie = (OptimizedLogStorage.ItemPickupDropLogEntry) entry;
+            String timeAgo = getTimeAgo(Duration.between(ie.timestamp, Instant.now()).getSeconds());
+            String itemId = Registries.ITEM.getId(ie.stack.getItem()).toString();
+            String itemName = ie.stack.getItem().getName().getString();
+            Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
+                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
+                    .append(Text.literal(ie.playerName).formatted(Formatting.AQUA))
+                    .append(Text.literal(" " + ie.action + " ").formatted(Formatting.GREEN))
+                    .append(Text.literal(ie.stack.getCount() + "x ").formatted(Formatting.WHITE))
+                    .append(Text.literal("#" + itemId).formatted(Formatting.YELLOW))
+                    .append(Text.literal(" (" + itemName + ")").formatted(Formatting.GRAY));
             return base;
         }
         return Text.literal("Unknown log entry").formatted(Formatting.GRAY);
@@ -502,6 +529,8 @@ public class MineTracerCommand {
             pos = ((OptimizedLogStorage.SignLogEntry) entry).pos;
         } else if (entry instanceof OptimizedLogStorage.KillLogEntry) {
             pos = ((OptimizedLogStorage.KillLogEntry) entry).pos;
+        } else if (entry instanceof OptimizedLogStorage.ItemPickupDropLogEntry) {
+            pos = ((OptimizedLogStorage.ItemPickupDropLogEntry) entry).pos;
         }
         if (pos != null) {
             return Text.literal("(x" + pos.getX() + "/y" + pos.getY() + "/z" + pos.getZ() + ")")
