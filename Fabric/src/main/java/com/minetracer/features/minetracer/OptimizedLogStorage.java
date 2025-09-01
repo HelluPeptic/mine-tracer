@@ -1046,7 +1046,7 @@ public class OptimizedLogStorage {
                 if (hasUnsavedChanges && !isShuttingDown) {
                     saveAllLogsAsync();
                 }
-            }, 120, 120, TimeUnit.SECONDS);
+            }, 30, 30, TimeUnit.SECONDS); // Reduced from 120s to 30s for better accuracy
         }
     }
     private static void stopPeriodicSaving() {

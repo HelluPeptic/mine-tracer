@@ -17,7 +17,6 @@ import java.util.HashMap;
 import java.util.Map;
 @Mixin(ScreenHandler.class)
 public class MixinScreenHandler {
-    private static final long INTERACTION_COOLDOWN_MS = 100;
     private static final long DRAG_TIMEOUT_MS = 500;
     private static final long SLOT_999_DELAY_MS = 50;
     private boolean minetracer$isContainerInteraction = false;
@@ -39,12 +38,6 @@ public class MixinScreenHandler {
     @Inject(method = "onSlotClick", at = @At("HEAD"))
     private void minetracer$logSlotClickHead(int slotIndex, int button,
             SlotActionType actionType, PlayerEntity player, CallbackInfo ci) {
-        long currentTime = System.currentTimeMillis();
-        if (currentTime - minetracer$lastInteractionTime < INTERACTION_COOLDOWN_MS) {
-            minetracer$isContainerInteraction = false;
-            return;
-        }
-        minetracer$lastInteractionTime = currentTime;
         ScreenHandler self = (ScreenHandler) (Object) this;
         if (self == null || self.slots.size() <= 3) {
             minetracer$isContainerInteraction = false;
@@ -140,7 +133,7 @@ public class MixinScreenHandler {
                 minetracer$containerPos = player.getBlockPos();
             }
         }
-        minetracer$lastClickTime = currentTime;
+        minetracer$lastClickTime = System.currentTimeMillis();
     }
     @Inject(method = "onSlotClick", at = @At("RETURN"))
     private void minetracer$logSlotClickReturn(int slotIndex, int button,
