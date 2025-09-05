@@ -17,8 +17,8 @@ import java.util.HashMap;
 import java.util.Map;
 @Mixin(ScreenHandler.class)
 public class MixinScreenHandler {
-    private static final long DRAG_TIMEOUT_MS = 500;
-    private static final long SLOT_999_DELAY_MS = 50;
+    private static final long DRAG_TIMEOUT_MS = 150; // ACCURACY UPDATE: Shorter timeout for better drag detection
+    private static final long SLOT_999_DELAY_MS = 25; // ACCURACY UPDATE: Faster response time
     private boolean minetracer$isContainerInteraction = false;
     private long minetracer$lastInteractionTime = 0;
     private Map<Integer, ItemStack> minetracer$trackedSlots = null;
@@ -31,7 +31,8 @@ public class MixinScreenHandler {
     private Map<String, Integer> minetracer$accumulatedContainerChanges = new HashMap<>();
     private Map<String, Integer> minetracer$accumulatedPlayerChanges = new HashMap<>();
     private boolean minetracer$isInmisBackpack(ScreenHandler handler) {
-        if (handler.slots.isEmpty()) return false;
+        if (handler.slots.isEmpty())
+            return false;
         String invClass = handler.getSlot(0).inventory.getClass().getName().toLowerCase();
         return invClass.contains("inmis") || invClass.contains("backpack");
     }
@@ -47,48 +48,45 @@ public class MixinScreenHandler {
             minetracer$isContainerInteraction = false;
             return;
         }
-        if (slotIndex == -999) {
-            minetracer$isContainerInteraction = self.getSlot(0).inventory != player.getInventory();
-            if (!minetracer$isContainerInteraction) {
-                return;
-            }
-            if (actionType == SlotActionType.QUICK_CRAFT) {
-                if (!minetracer$isDragOperation) {
-                    minetracer$isDragOperation = true;
-                    if (minetracer$trackedSlots == null) {
-                        minetracer$trackedSlots = new HashMap<>(27);
-                        minetracer$trackedPlayerSlots = new HashMap<>(36);
-                    } else {
-                        minetracer$trackedSlots.clear();
-                        minetracer$trackedPlayerSlots.clear();
-                    }
-                    minetracer$accumulatedContainerChanges.clear();
-                    minetracer$accumulatedPlayerChanges.clear();
-                    minetracer$containerPos = null;
-                    minetracer$hasRelevantSlots = false;
-                    for (int i = 0; i < self.slots.size(); i++) {
-                        Slot slot = self.getSlot(i);
-                        ItemStack stack = slot.getStack();
-                        if (slot.inventory != player.getInventory()) {
-                            if (minetracer$containerPos == null
-                                    && slot.inventory instanceof net.minecraft.block.entity.BlockEntity be) {
-                                minetracer$containerPos = be.getPos();
-                            }
-                            minetracer$trackedSlots.put(i, stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
-                            if (!stack.isEmpty()) {
-                                minetracer$hasRelevantSlots = true;
-                            }
-                        } else {
-                            minetracer$trackedPlayerSlots.put(i, stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
-                        }
-                    }
-                    if (minetracer$containerPos == null) {
-                        minetracer$containerPos = player.getBlockPos();
-                    }
+        minetracer$isContainerInteraction = self.getSlot(0).inventory != player.getInventory();
+        if (!minetracer$isContainerInteraction) {
+            return;
+        }
+        if (slotIndex == -999 || actionType == SlotActionType.QUICK_CRAFT) {
+            if (!minetracer$isDragOperation) {
+                minetracer$isDragOperation = true;
+                if (minetracer$trackedSlots == null) {
+                    minetracer$trackedSlots = new HashMap<>(27);
+                    minetracer$trackedPlayerSlots = new HashMap<>(36);
                 } else {
-                    minetracer$lastSlot999Time = System.currentTimeMillis();
+                    minetracer$trackedSlots.clear();
+                    minetracer$trackedPlayerSlots.clear();
+                }
+                minetracer$accumulatedContainerChanges.clear();
+                minetracer$accumulatedPlayerChanges.clear();
+                minetracer$containerPos = null;
+                minetracer$hasRelevantSlots = false;
+                for (int i = 0; i < self.slots.size(); i++) {
+                    Slot slot = self.getSlot(i);
+                    ItemStack stack = slot.getStack();
+                    if (slot.inventory != player.getInventory()) {
+                        if (minetracer$containerPos == null
+                                && slot.inventory instanceof net.minecraft.block.entity.BlockEntity be) {
+                            minetracer$containerPos = be.getPos();
+                        }
+                        minetracer$trackedSlots.put(i, stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
+                        if (!stack.isEmpty()) {
+                            minetracer$hasRelevantSlots = true;
+                        }
+                    } else {
+                        minetracer$trackedPlayerSlots.put(i, stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
+                    }
+                }
+                if (minetracer$containerPos == null) {
+                    minetracer$containerPos = player.getBlockPos();
                 }
             }
+            minetracer$lastSlot999Time = System.currentTimeMillis();
             return;
         }
         if (slotIndex >= 0 && slotIndex < self.slots.size()) {
@@ -98,10 +96,6 @@ public class MixinScreenHandler {
                 minetracer$isContainerInteraction = false;
                 return;
             }
-        }
-        minetracer$isContainerInteraction = self.getSlot(0).inventory != player.getInventory();
-        if (!minetracer$isContainerInteraction) {
-            return;
         }
         if (minetracer$trackedSlots == null) {
             minetracer$trackedSlots = new HashMap<>(27);
@@ -163,23 +157,6 @@ public class MixinScreenHandler {
                 minetracer$trackedSlots.clear();
                 minetracer$trackedPlayerSlots.clear();
                 minetracer$isContainerInteraction = false;
-            } else {
-                boolean hasTransfer = false;
-                for (String itemKey : minetracer$accumulatedContainerChanges.keySet()) {
-                    int containerChange = minetracer$accumulatedContainerChanges.getOrDefault(itemKey, 0);
-                    int playerChange = minetracer$accumulatedPlayerChanges.getOrDefault(itemKey, 0);
-                    if (containerChange != 0 && playerChange != 0 && containerChange + playerChange == 0) {
-                        hasTransfer = true;
-                        break;
-                    }
-                }
-                if (hasTransfer) {
-                    minetracer$isDragOperation = false;
-                    minetracer$lastSlot999Time = 0;
-                    minetracer$trackedSlots.clear();
-                    minetracer$trackedPlayerSlots.clear();
-                    minetracer$isContainerInteraction = false;
-                }
             }
         }
     }
@@ -232,23 +209,23 @@ public class MixinScreenHandler {
             }
         }
     }
-    private void minetracer$analyzeCurrentTransfers(Map<String, Integer> containerItemChanges, Map<String, Integer> playerItemChanges, PlayerEntity player) {
+    private void minetracer$analyzeCurrentTransfers(Map<String, Integer> containerItemChanges,
+            Map<String, Integer> playerItemChanges, PlayerEntity player) {
         for (String itemKey : containerItemChanges.keySet()) {
-            int containerChange = containerItemChanges.getOrDefault(itemKey, 0);
-            int playerChange = playerItemChanges.getOrDefault(itemKey, 0);
-            if (containerChange > 0 && playerChange < 0 && containerChange == -playerChange) {
+            if (itemKey.equals("air"))
+                continue;
+            int containerChange = containerItemChanges.get(itemKey);
+            if (containerChange > 0) {
                 ItemStack itemStack = minetracer$createItemStackFromKey(itemKey);
                 if (!itemStack.isEmpty()) {
-                    OptimizedLogStorage.logItemPickupDropAction(
-                        "deposit", player, minetracer$containerPos, itemStack, player.getEntityWorld().getRegistryKey().getValue().toString()
-                    );
+                    itemStack.setCount(containerChange);
+                    OptimizedLogStorage.logContainerAction("deposit", player, minetracer$containerPos, itemStack);
                 }
-            } else if (containerChange < 0 && playerChange > 0 && -containerChange == playerChange) {
+            } else if (containerChange < 0) {
                 ItemStack itemStack = minetracer$createItemStackFromKey(itemKey);
                 if (!itemStack.isEmpty()) {
-                    OptimizedLogStorage.logItemPickupDropAction(
-                        "withdrawal", player, minetracer$containerPos, itemStack, player.getEntityWorld().getRegistryKey().getValue().toString()
-                    );
+                    itemStack.setCount(-containerChange);
+                    OptimizedLogStorage.logContainerAction("withdrawal", player, minetracer$containerPos, itemStack);
                 }
             }
         }
@@ -257,19 +234,17 @@ public class MixinScreenHandler {
         for (String itemKey : minetracer$accumulatedContainerChanges.keySet()) {
             int containerChange = minetracer$accumulatedContainerChanges.getOrDefault(itemKey, 0);
             int playerChange = minetracer$accumulatedPlayerChanges.getOrDefault(itemKey, 0);
-            if (containerChange > 0 && playerChange < 0 && containerChange == -playerChange) {
+            if (containerChange > 0 && playerChange < 0) {
                 ItemStack itemStack = minetracer$createItemStackFromKey(itemKey);
                 if (!itemStack.isEmpty()) {
-                    OptimizedLogStorage.logItemPickupDropAction(
-                        "deposit", player, minetracer$containerPos, itemStack, player.getEntityWorld().getRegistryKey().getValue().toString()
-                    );
+                    itemStack.setCount(containerChange); // Use actual deposited amount
+                    OptimizedLogStorage.logContainerAction("deposit", player, minetracer$containerPos, itemStack);
                 }
-            } else if (containerChange < 0 && playerChange > 0 && -containerChange == playerChange) {
+            } else if (containerChange < 0 && playerChange > 0) {
                 ItemStack itemStack = minetracer$createItemStackFromKey(itemKey);
                 if (!itemStack.isEmpty()) {
-                    OptimizedLogStorage.logItemPickupDropAction(
-                        "withdrawal", player, minetracer$containerPos, itemStack, player.getEntityWorld().getRegistryKey().getValue().toString()
-                    );
+                    itemStack.setCount(-containerChange); // Use actual withdrawn amount
+                    OptimizedLogStorage.logContainerAction("withdrawal", player, minetracer$containerPos, itemStack);
                 }
             }
         }
@@ -277,12 +252,14 @@ public class MixinScreenHandler {
         minetracer$accumulatedPlayerChanges.clear();
     }
     private String minetracer$getItemKey(ItemStack stack) {
-        if (stack.isEmpty()) return "air";
+        if (stack.isEmpty())
+            return "air";
         String itemId = Registries.ITEM.getId(stack.getItem()).toString();
         return stack.hasNbt() ? itemId + stack.getNbt().toString() : itemId;
     }
     private ItemStack minetracer$createItemStackFromKey(String key) {
-        if (key.equals("air")) return ItemStack.EMPTY;
+        if (key.equals("air"))
+            return ItemStack.EMPTY;
         String itemId = key.contains("{") ? key.substring(0, key.indexOf("{")) : key;
         Item item = Registries.ITEM.get(new Identifier(itemId));
         return new ItemStack(item, 1);
