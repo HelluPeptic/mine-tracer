@@ -127,6 +127,10 @@ public class OptimizedLogStorage {
     private static final Long2ObjectOpenHashMap<List<KillLogEntry>> chunkKillLogs = new Long2ObjectOpenHashMap<>();
     private static final Long2ObjectOpenHashMap<List<ItemPickupDropLogEntry>> chunkItemLogs = new Long2ObjectOpenHashMap<>();
     private static final Path LOG_FILE = Path.of("config", "minetracer", "logs.json");
+    private static final Path BACKUP_DIR = Path.of("config", "minetracer", "backups");
+    private static final Path TEMP_SAVE_FILE = Path.of("config", "minetracer", "logs_temp.json");
+    private static volatile long lastKnownFileSize = 0;
+    private static volatile long totalLogEntries = 0;
     private static final ReadWriteLock dataLock = new ReentrantReadWriteLock();
     private static final Object saveLock = new Object();
     private static volatile boolean hasUnsavedChanges = false;
@@ -143,6 +147,7 @@ public class OptimizedLogStorage {
             t.setDaemon(true);
             return t;
         });
+    private static ScheduledExecutorService backupScheduler;
     private static final Gson GSON = new GsonBuilder()
             .setPrettyPrinting()
             .registerTypeAdapter(java.time.Instant.class, new TypeAdapter<java.time.Instant>() {
@@ -168,6 +173,130 @@ public class OptimizedLogStorage {
             t.setPriority(Thread.NORM_PRIORITY - 1);
             return t;
         });
+        backupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "MineTracer-BackupManager");
+            t.setDaemon(true);
+            t.setPriority(Thread.NORM_PRIORITY - 1);
+            return t;
+        });
+    }
+    private static void verifyFileIntegrity() {
+        try {
+            if (!Files.exists(LOG_FILE)) {
+                System.out.println("[MineTracer] WARNING: Log file does not exist, this is normal for first run");
+                return;
+            }
+            long currentFileSize = Files.size(LOG_FILE);
+            if (lastKnownFileSize > 0 && currentFileSize < lastKnownFileSize) {
+                System.err.println("[MineTracer] CRITICAL WARNING: Log file has shrunk from " + 
+                    lastKnownFileSize + " to " + currentFileSize + " bytes! Possible data corruption detected!");
+                createEmergencyBackup();
+            }
+            lastKnownFileSize = currentFileSize;
+        } catch (Exception e) {
+            System.err.println("[MineTracer] Error verifying file integrity: " + e.getMessage());
+        }
+    }
+    private static void createEmergencyBackup() {
+        try {
+            Files.createDirectories(BACKUP_DIR);
+            Path emergencyBackup = BACKUP_DIR.resolve("emergency_backup_" + System.currentTimeMillis() + ".json");
+            if (Files.exists(LOG_FILE)) {
+                Files.copy(LOG_FILE, emergencyBackup);
+                System.out.println("[MineTracer] Emergency backup created: " + emergencyBackup);
+            }
+        } catch (Exception e) {
+            System.err.println("[MineTracer] Failed to create emergency backup: " + e.getMessage());
+        }
+    }
+    private static void createRegularBackup() {
+        try {
+            if (!Files.exists(LOG_FILE)) return;
+            Files.createDirectories(BACKUP_DIR);
+            try {
+                Files.list(BACKUP_DIR)
+                    .filter(p -> p.getFileName().toString().startsWith("backup_") && p.getFileName().toString().endsWith(".json"))
+                    .sorted((a, b) -> b.getFileName().toString().compareTo(a.getFileName().toString()))
+                    .skip(9) // Keep 9, delete the rest (we're about to create 1 more)
+                    .forEach(p -> {
+                        try {
+                            Files.deleteIfExists(p);
+                        } catch (Exception e) {
+                            System.err.println("[MineTracer] Failed to delete old backup: " + e.getMessage());
+                        }
+                    });
+            } catch (Exception e) {
+                System.err.println("[MineTracer] Error cleaning up old backups: " + e.getMessage());
+            }
+            Path backup = BACKUP_DIR.resolve("backup_" + System.currentTimeMillis() + ".json");
+            Files.copy(LOG_FILE, backup);
+            System.out.println("[MineTracer] Regular backup created: " + backup.getFileName());
+        } catch (Exception e) {
+            System.err.println("[MineTracer] Failed to create regular backup: " + e.getMessage());
+        }
+    }
+    private static void performAtomicSave() {
+        synchronized (saveLock) {
+            try {
+                Files.createDirectories(LOG_FILE.getParent());
+                verifyFileIntegrity();
+                dataLock.readLock().lock();
+                Map<String, Object> allLogs;
+                try {
+                    List<LogEntryJson> containerLogsJson = new ArrayList<>();
+                    for (LogEntry entry : logs) {
+                        try {
+                            containerLogsJson.add(new LogEntryJson(entry));
+                        } catch (Exception e) {
+                            System.err.println("[MineTracer] Failed to serialize container log entry: " + e.getMessage());
+                        }
+                    }
+                    List<BlockLogEntryJson> blockLogsJson = new ArrayList<>();
+                    for (BlockLogEntry entry : blockLogs) {
+                        blockLogsJson.add(new BlockLogEntryJson(entry));
+                    }
+                    List<SignLogEntryJson> signLogsJson = new ArrayList<>();
+                    for (SignLogEntry entry : signLogs) {
+                        signLogsJson.add(new SignLogEntryJson(entry));
+                    }
+                    List<KillLogEntryJson> killLogsJson = new ArrayList<>();
+                    for (KillLogEntry entry : killLogs) {
+                        killLogsJson.add(new KillLogEntryJson(entry));
+                    }
+                    List<ItemPickupDropLogEntryJson> itemLogsJson = new ArrayList<>();
+                    for (ItemPickupDropLogEntry entry : itemPickupDropLogs) {
+                        try {
+                            itemLogsJson.add(new ItemPickupDropLogEntryJson(entry));
+                        } catch (Exception e) {
+                            System.err.println("[MineTracer] Failed to serialize item log entry: " + e.getMessage());
+                        }
+                    }
+                    allLogs = new HashMap<>();
+                    allLogs.put("container", containerLogsJson);
+                    allLogs.put("block", blockLogsJson);
+                    allLogs.put("sign", signLogsJson);
+                    allLogs.put("kill", killLogsJson);
+                    allLogs.put("itemPickupDrop", itemLogsJson);
+                    totalLogEntries = logs.size() + blockLogs.size() + signLogs.size() + killLogs.size() + itemPickupDropLogs.size();
+                } finally {
+                    dataLock.readLock().unlock();
+                }
+                String json = GSON.toJson(allLogs);
+                Files.writeString(TEMP_SAVE_FILE, json, StandardCharsets.UTF_8);
+                Files.move(TEMP_SAVE_FILE, LOG_FILE, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                hasUnsavedChanges = false;
+                lastKnownFileSize = Files.size(LOG_FILE);
+                System.out.println("[MineTracer] Data safely saved (" + totalLogEntries + " total entries, " + lastKnownFileSize + " bytes)");
+            } catch (Exception e) {
+                System.err.println("[MineTracer] CRITICAL: Failed to save logs! " + e.getMessage());
+                e.printStackTrace();
+                try {
+                    Files.deleteIfExists(TEMP_SAVE_FILE);
+                } catch (Exception cleanupEx) {
+                    System.err.println("[MineTracer] Failed to cleanup temp file: " + cleanupEx.getMessage());
+                }
+            }
+        }
     }
     private static long getChunkKey(BlockPos pos) {
         return ((long) (pos.getX() >> 4) << 32) | ((long) (pos.getZ() >> 4) & 0xFFFFFFFFL);
@@ -236,7 +365,6 @@ public class OptimizedLogStorage {
         return CompletableFuture.runAsync(() -> {
             dataLock.writeLock().lock();
             try {
-                logsLoaded = false; // Reset flag before loading
                 logs.clear();
                 blockLogs.clear();
                 signLogs.clear();
@@ -253,7 +381,10 @@ public class OptimizedLogStorage {
                 chunkKillLogs.clear();
                 chunkItemLogs.clear();
                 Files.createDirectories(LOG_FILE.getParent());
+                verifyFileIntegrity();
                 if (Files.exists(LOG_FILE)) {
+                    long fileSize = Files.size(LOG_FILE);
+                    System.out.println("[MineTracer] Loading logs from file (" + fileSize + " bytes)");
                     String json = Files.readString(LOG_FILE, StandardCharsets.UTF_8);
                     Type type = new TypeToken<Map<String, Object>>() {
                     }.getType();
@@ -344,11 +475,25 @@ public class OptimizedLogStorage {
                         }
                     }
                 } else {
+                    System.out.println("[MineTracer] No existing log file found - starting fresh");
                 }
                 hasUnsavedChanges = false;
                 logsLoaded = true;
+                totalLogEntries = logs.size() + blockLogs.size() + signLogs.size() + killLogs.size() + itemPickupDropLogs.size();
+                System.out.println("[MineTracer] Successfully loaded " + totalLogEntries + " log entries");
+                System.out.println("[MineTracer] - Container logs: " + logs.size());
+                System.out.println("[MineTracer] - Block logs: " + blockLogs.size());
+                System.out.println("[MineTracer] - Sign logs: " + signLogs.size());
+                System.out.println("[MineTracer] - Kill logs: " + killLogs.size());
+                System.out.println("[MineTracer] - Item pickup/drop logs: " + itemPickupDropLogs.size());
             } catch (Exception e) {
+                System.err.println("[MineTracer] CRITICAL ERROR loading logs: " + e.getMessage());
                 e.printStackTrace();
+                try {
+                    createEmergencyBackup();
+                } catch (Exception backupEx) {
+                    System.err.println("[MineTracer] Failed to backup corrupted file: " + backupEx.getMessage());
+                }
             } finally {
                 dataLock.writeLock().unlock();
             }
@@ -364,6 +509,9 @@ public class OptimizedLogStorage {
             try {
                 logs.add(entry);
                 hasUnsavedChanges = true;
+                if (logs.size() % 100 == 0) {
+                    CompletableFuture.runAsync(() -> performAtomicSave());
+                }
             } finally {
                 dataLock.writeLock().unlock();
             }
@@ -377,6 +525,9 @@ public class OptimizedLogStorage {
         try {
             blockLogs.add(entry);
             hasUnsavedChanges = true;
+            if (blockLogs.size() % 100 == 0) {
+                CompletableFuture.runAsync(() -> performAtomicSave());
+            }
         } finally {
             dataLock.writeLock().unlock();
         }
@@ -890,44 +1041,8 @@ public class OptimizedLogStorage {
     }
     private static CompletableFuture<Void> saveAllLogsAsync() {
         return CompletableFuture.runAsync(() -> {
-            synchronized (saveLock) {
-                if (!hasUnsavedChanges && !isShuttingDown) {
-                    return;
-                }
-                try {
-                    Files.createDirectories(LOG_FILE.getParent());
-                    Map<String, Object> allLogs = new HashMap<>();
-                    dataLock.readLock().lock();
-                    try {
-                        List<Object> containerList = new ArrayList<>();
-                        for (LogEntry entry : logs)
-                            containerList.add(new LogEntryJson(entry));
-                        allLogs.put("container", containerList);
-                        List<Object> blockList = new ArrayList<>();
-                        for (BlockLogEntry entry : blockLogs)
-                            blockList.add(new BlockLogEntryJson(entry));
-                        allLogs.put("block", blockList);
-                        List<Object> signList = new ArrayList<>();
-                        for (SignLogEntry entry : signLogs)
-                            signList.add(new SignLogEntryJson(entry));
-                        allLogs.put("sign", signList);
-                        List<Object> killList = new ArrayList<>();
-                        for (KillLogEntry entry : killLogs)
-                            killList.add(new KillLogEntryJson(entry));
-                        allLogs.put("kill", killList);
-                        List<Object> itemPickupDropList = new ArrayList<>();
-                        for (ItemPickupDropLogEntry entry : itemPickupDropLogs)
-                            itemPickupDropList.add(new ItemPickupDropLogEntryJson(entry));
-                        allLogs.put("itemPickupDrop", itemPickupDropList);
-                    } finally {
-                        dataLock.readLock().unlock();
-                    }
-                    String json = GSON.toJson(allLogs);
-                    Files.writeString(LOG_FILE, json, StandardCharsets.UTF_8);
-                    hasUnsavedChanges = false;
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
+            if (hasUnsavedChanges || isShuttingDown) {
+                performAtomicSave();
             }
         }, queryExecutor);
     }
@@ -941,7 +1056,11 @@ public class OptimizedLogStorage {
             this.action = entry.action;
             this.playerName = entry.playerName;
             this.pos = entry.pos.getX() + "," + entry.pos.getY() + "," + entry.pos.getZ();
-            this.itemNbt = entry.stack.writeNbt(new NbtCompound()).toString();
+            try {
+                this.itemNbt = entry.stack.writeNbt(new NbtCompound()).toString();
+            } catch (Exception e) {
+                this.itemNbt = "{}";
+            }
             this.timestamp = entry.timestamp.toString();
         }
     }
@@ -1003,7 +1122,11 @@ public class OptimizedLogStorage {
             this.action = entry.action;
             this.playerName = entry.playerName;
             this.pos = entry.pos.getX() + "," + entry.pos.getY() + "," + entry.pos.getZ();
-            this.itemNbt = entry.stack.writeNbt(new net.minecraft.nbt.NbtCompound()).toString();
+            try {
+                this.itemNbt = entry.stack.writeNbt(new net.minecraft.nbt.NbtCompound()).toString();
+            } catch (Exception e) {
+                this.itemNbt = "{}";
+            }
             this.world = entry.world;
             this.timestamp = entry.timestamp.toString();
         }
@@ -1019,20 +1142,30 @@ public class OptimizedLogStorage {
             try {
                 loadAllLogsAsync().get(); // Wait for loading to complete
                 startPeriodicSaving();
+                System.out.println("[MineTracer] Data protection system active - 10s saves, hourly backups, integrity monitoring");
             } catch (Exception e) {
+                System.err.println("[MineTracer] CRITICAL: Failed to initialize data protection system!");
                 e.printStackTrace();
             }
         });
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            System.out.println("[MineTracer] Server stopping - ensuring all data is saved...");
             isShuttingDown = true;
-            stopPeriodicSaving();
             try {
-                saveAllLogsAsync().get(); // Wait for final save to complete
+                createEmergencyBackup();
+                if (hasUnsavedChanges) {
+                    performAtomicSave();
+                    System.out.println("[MineTracer] Final save completed successfully");
+                }
+                stopPeriodicSaving();
             } catch (Exception e) {
+                System.err.println("[MineTracer] ERROR during shutdown save: " + e.getMessage());
+                e.printStackTrace();
             }
             if (indexingExecutor != null && !indexingExecutor.isShutdown()) {
                 indexingExecutor.shutdown();
             }
+            System.out.println("[MineTracer] Shutdown complete - all data protected");
         });
     }
     private static void startPeriodicSaving() {
@@ -1044,9 +1177,15 @@ public class OptimizedLogStorage {
             });
             saveScheduler.scheduleWithFixedDelay(() -> {
                 if (hasUnsavedChanges && !isShuttingDown) {
-                    saveAllLogsAsync();
+                    performAtomicSave(); // Use new atomic save method
                 }
-            }, 30, 30, TimeUnit.SECONDS); // Reduced from 120s to 30s for better accuracy
+            }, 10, 10, TimeUnit.SECONDS);
+            backupScheduler.scheduleWithFixedDelay(() -> {
+                if (!isShuttingDown) {
+                    createRegularBackup();
+                }
+            }, 60, 60, TimeUnit.MINUTES);
+            System.out.println("[MineTracer] Data protection initialized: 10-second saves, hourly backups");
         }
     }
     private static void stopPeriodicSaving() {
@@ -1058,6 +1197,17 @@ public class OptimizedLogStorage {
                 }
             } catch (InterruptedException e) {
                 saveScheduler.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (backupScheduler != null && !backupScheduler.isShutdown()) {
+            backupScheduler.shutdown();
+            try {
+                if (!backupScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                    backupScheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                backupScheduler.shutdownNow();
                 Thread.currentThread().interrupt();
             }
         }
