@@ -49,9 +49,12 @@ public class MineTracerCommand {
                     .then(CommandManager.literal("save")
                             .requires(source -> Permissions.check(source, "minetracer.command.save", 2))
                             .executes(MineTracerCommand::save))
+                    .then(CommandManager.literal("saves")
+                            .requires(source -> Permissions.check(source, "minetracer.command.saves", 2))
+                            .executes(MineTracerCommand::showSaveHistory))
                     .executes(context -> {
                         ServerCommandSource source = context.getSource();
-                        source.sendError(Text.literal("Invalid command usage. Use /minetracer <lookup|rollback|page|inspector|save>"));
+                        source.sendError(Text.literal("Invalid command usage. Use /minetracer <lookup|rollback|page|inspector|save|saves>"));
                         return 0;
                     }));
         });
@@ -1004,6 +1007,29 @@ public class MineTracerCommand {
         } catch (Exception e) {
             source.sendError(Text.literal("Error saving log data: " + e.getMessage()));
             return 0;
+        }
+        return Command.SINGLE_SUCCESS;
+    }
+    public static int showSaveHistory(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+        if (!Permissions.check(source, "minetracer.command.saves", 2)) {
+            source.sendError(Text.literal("You do not have permission to use this command."));
+            return 0;
+        }
+        List<OptimizedLogStorage.SaveHistory> saveHistory = OptimizedLogStorage.getSaveHistory();
+        if (saveHistory.isEmpty()) {
+            source.sendFeedback(() -> Text.literal("No save history available yet.").formatted(Formatting.YELLOW), false);
+            return Command.SINGLE_SUCCESS;
+        }
+        source.sendFeedback(() -> Text.literal("=== MineTracer Save History (Last " + saveHistory.size() + " saves) ===").formatted(Formatting.GOLD), false);
+        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").withZone(java.time.ZoneId.systemDefault());
+        for (int i = 0; i < saveHistory.size(); i++) {
+            OptimizedLogStorage.SaveHistory save = saveHistory.get(i);
+            String timeStr = formatter.format(save.timestamp);
+            long kilobytes = save.fileSizeBytes / 1024;
+            Text message = Text.literal(String.format("[%d] %s - %,d entries (%,d KB)", 
+                i + 1, timeStr, save.totalEntries, kilobytes)).formatted(Formatting.WHITE);
+            source.sendFeedback(() -> message, false);
         }
         return Command.SINGLE_SUCCESS;
     }

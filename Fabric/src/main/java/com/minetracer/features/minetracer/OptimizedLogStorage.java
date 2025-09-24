@@ -147,6 +147,18 @@ public class OptimizedLogStorage {
             t.setDaemon(true);
             return t;
         });
+    public static class SaveHistory {
+        public final Instant timestamp;
+        public final int totalEntries;
+        public final long fileSizeBytes;
+        public SaveHistory(Instant timestamp, int totalEntries, long fileSizeBytes) {
+            this.timestamp = timestamp;
+            this.totalEntries = totalEntries;
+            this.fileSizeBytes = fileSizeBytes;
+        }
+    }
+    private static final java.util.Deque<SaveHistory> saveHistoryQueue = new java.util.ArrayDeque<>(8);
+    private static final Object saveHistoryLock = new Object();
     private static ScheduledExecutorService backupScheduler;
     private static final Gson GSON = new GsonBuilder()
             .setPrettyPrinting()
@@ -286,7 +298,12 @@ public class OptimizedLogStorage {
                 Files.move(TEMP_SAVE_FILE, LOG_FILE, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
                 hasUnsavedChanges = false;
                 lastKnownFileSize = Files.size(LOG_FILE);
-                System.out.println("[MineTracer] Data safely saved (" + totalLogEntries + " total entries, " + lastKnownFileSize + " bytes)");
+                synchronized (saveHistoryLock) {
+                    if (saveHistoryQueue.size() >= 8) {
+                        saveHistoryQueue.removeFirst(); // Remove oldest if queue is full
+                    }
+                    saveHistoryQueue.addLast(new SaveHistory(Instant.now(), (int) totalLogEntries, lastKnownFileSize));
+                }
             } catch (Exception e) {
                 System.err.println("[MineTracer] CRITICAL: Failed to save logs! " + e.getMessage());
                 e.printStackTrace();
@@ -1131,6 +1148,11 @@ public class OptimizedLogStorage {
             this.timestamp = entry.timestamp.toString();
         }
     }
+    public static List<SaveHistory> getSaveHistory() {
+        synchronized (saveHistoryLock) {
+            return new ArrayList<>(saveHistoryQueue);
+        }
+    }
     public static void forceSave() {
         try {
             saveAllLogsAsync().get();
@@ -1138,7 +1160,7 @@ public class OptimizedLogStorage {
         }
     }
     public static void registerServerLifecycle() {
-        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(serverInstance -> {
             try {
                 loadAllLogsAsync().get(); // Wait for loading to complete
                 startPeriodicSaving();
@@ -1148,7 +1170,7 @@ public class OptimizedLogStorage {
                 e.printStackTrace();
             }
         });
-        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(serverInstance -> {
             System.out.println("[MineTracer] Server stopping - ensuring all data is saved...");
             isShuttingDown = true;
             try {
