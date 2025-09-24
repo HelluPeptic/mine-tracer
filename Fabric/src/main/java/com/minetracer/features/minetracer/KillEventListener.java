@@ -7,9 +7,13 @@ import net.minecraft.util.math.BlockPos;
 public class KillEventListener {
     public static void register() {
         ServerEntityCombatEvents.AFTER_KILLED_OTHER_ENTITY.register((world, entity, killedEntity) -> {
-            if (!(entity instanceof LivingEntity)) return;
+            if (!(entity instanceof LivingEntity)) {
+                return;
+            }
             LivingEntity killer = (LivingEntity) entity;
-            if (!(killer instanceof PlayerEntity)) return;
+            if (!(killer instanceof PlayerEntity)) {
+                return;
+            }
             String killerName = killer.getName().getString();
             String victimName = killedEntity.getName().getString();
             BlockPos pos = killedEntity.getBlockPos();
