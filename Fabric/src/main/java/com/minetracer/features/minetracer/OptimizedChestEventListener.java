@@ -33,7 +33,7 @@ public class OptimizedChestEventListener {
                             .forEach(i -> {
                                 ItemStack stack = inv.getStack(i);
                                 if (!stack.isEmpty()) {
-                                    OptimizedLogStorage.logContainerAction("withdrew", player, entityPos, stack);
+                                    NewOptimizedLogStorage.logContainerAction("withdrew", player, entityPos, stack);
                                 }
                             });
                 });

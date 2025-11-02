@@ -1,4 +1,5 @@
 package com.minetracer.features.minetracer;
+import com.minetracer.features.minetracer.NewOptimizedLogStorage;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
@@ -517,6 +518,10 @@ public class OptimizedLogStorage {
         }, queryExecutor);
     }
     public static void logContainerAction(String action, PlayerEntity player, BlockPos pos, ItemStack stack) {
+        // Delegate to new optimized database storage system (CoreProtect style)
+        NewOptimizedLogStorage.logContainerAction(action, player, pos, stack);
+        
+        // Keep old logging for compatibility with lookup system until we migrate fully
         if (stack.isEmpty()) {
             return;
         }
@@ -537,6 +542,12 @@ public class OptimizedLogStorage {
         });
     }
     public static void logBlockAction(String action, PlayerEntity player, BlockPos pos, String blockId, String nbt) {
+        // Delegate to new optimized database storage system (CoreProtect style)
+        if (player instanceof net.minecraft.server.network.ServerPlayerEntity) {
+            NewOptimizedLogStorage.logBlockAction(action, player, pos, blockId, nbt);
+        }
+        
+        // Keep old logging for compatibility with lookup system until we migrate fully
         BlockLogEntry entry = new BlockLogEntry(action, player.getName().getString(), pos, blockId, nbt, Instant.now());
         dataLock.writeLock().lock();
         try {
@@ -565,6 +576,10 @@ public class OptimizedLogStorage {
         invalidateQueryCache();
     }
     public static void logKillAction(String killerName, String victimName, BlockPos pos, String world) {
+        // Delegate to new optimized database storage system (CoreProtect style)
+        NewOptimizedLogStorage.logKillAction(killerName, victimName, pos, world);
+        
+        // Keep old logging for compatibility with lookup system until we migrate fully
         KillLogEntry entry = new KillLogEntry(killerName, victimName, pos, world, Instant.now());
         dataLock.writeLock().lock();
         try {
@@ -580,6 +595,13 @@ public class OptimizedLogStorage {
         if (stack.isEmpty() || player == null) {
             return;
         }
+        
+        // Delegate to new optimized database storage system (CoreProtect style)
+        if (player instanceof net.minecraft.server.network.ServerPlayerEntity) {
+            NewOptimizedLogStorage.logItemPickupDropAction(action, (net.minecraft.server.network.ServerPlayerEntity) player, pos, stack, world);
+        }
+        
+        // Keep old logging for compatibility with lookup system until we migrate fully
         ItemPickupDropLogEntry entry = new ItemPickupDropLogEntry(action, player.getName().getString(), pos, stack, world, Instant.now());
         getAsyncExecutor().execute(() -> {
             dataLock.writeLock().lock();

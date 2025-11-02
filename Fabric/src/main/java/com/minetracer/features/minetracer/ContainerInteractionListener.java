@@ -103,18 +103,18 @@ public class ContainerInteractionListener {
                 ItemStack newStack = inventory.getStack(i);
                 if (!ItemStack.areEqual(oldStack, newStack)) {
                     if (oldStack.isEmpty() && !newStack.isEmpty()) {
-                        OptimizedLogStorage.logContainerAction("deposited", player, pos, newStack);
+                        NewOptimizedLogStorage.logContainerAction("deposited", player, pos, newStack);
                     } else if (!oldStack.isEmpty() && newStack.isEmpty()) {
-                        OptimizedLogStorage.logContainerAction("withdrew", player, pos, oldStack);
+                        NewOptimizedLogStorage.logContainerAction("withdrew", player, pos, oldStack);
                     } else if (!oldStack.isEmpty() && !newStack.isEmpty()) {
                         if (newStack.getCount() > oldStack.getCount()) {
                             ItemStack diff = newStack.copy();
                             diff.setCount(newStack.getCount() - oldStack.getCount());
-                            OptimizedLogStorage.logContainerAction("deposited", player, pos, diff);
+                            NewOptimizedLogStorage.logContainerAction("deposited", player, pos, diff);
                         } else if (newStack.getCount() < oldStack.getCount()) {
                             ItemStack diff = oldStack.copy();
                             diff.setCount(oldStack.getCount() - newStack.getCount());
-                            OptimizedLogStorage.logContainerAction("withdrew", player, pos, diff);
+                            NewOptimizedLogStorage.logContainerAction("withdrew", player, pos, diff);
                         }
                     }
                 }

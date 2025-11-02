@@ -14,7 +14,7 @@ public class ItemPickupDropEventListener {
         }
         BlockPos pos = itemEntity.getBlockPos();
         String world = player.getWorld().getRegistryKey().getValue().toString();
-        OptimizedLogStorage.logItemPickupDropAction(PICKUP_ACTION, player, pos, originalStack.copy(), world);
+        NewOptimizedLogStorage.logItemPickupDropAction(PICKUP_ACTION, player, pos, originalStack.copy(), world);
     }
     public static void logItemDrop(ServerPlayerEntity player, ItemEntity itemEntity) {
         if (player == null || itemEntity == null || itemEntity.getStack().isEmpty()) {
@@ -23,6 +23,6 @@ public class ItemPickupDropEventListener {
         ItemStack stack = itemEntity.getStack();
         BlockPos pos = itemEntity.getBlockPos();
         String world = player.getWorld().getRegistryKey().getValue().toString();
-        OptimizedLogStorage.logItemPickupDropAction(DROP_ACTION, player, pos, stack, world);
+        NewOptimizedLogStorage.logItemPickupDropAction(DROP_ACTION, player, pos, stack, world);
     }
 }
