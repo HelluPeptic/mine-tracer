@@ -21,6 +21,7 @@ build
 # other
 eclipse
 run
+CoreProtect-master
 
 # Keep git filter scripts
 !.git-filters/
