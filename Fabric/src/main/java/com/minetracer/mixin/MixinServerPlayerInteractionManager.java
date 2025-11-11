@@ -39,7 +39,7 @@ public class MixinServerPlayerInteractionManager {
             net.minecraft.util.hit.BlockHitResult hitResult,
             CallbackInfoReturnable<net.minecraft.util.ActionResult> cir) {
         if (OptimizedLogStorage.isInspectorMode(player)) {
-            minetracer$inspectorModeInteract(player, world, stack, hand, hitResult, cir);
+            // Skip old inspector logic - new CoreProtect-style system handles this via UseBlockCallback
             return;
         }
         BlockPos placedPos = hitResult.getBlockPos().offset(hitResult.getSide());
@@ -109,7 +109,7 @@ public class MixinServerPlayerInteractionManager {
         this.minetracer$prevBrokenState = null;
         this.minetracer$prevBrokenBlockEntity = null;
         if (OptimizedLogStorage.isInspectorMode(player)) {
-            minetracer$inspectorModeBreak(pos, cir);
+            // Skip old inspector logic - new CoreProtect-style system handles this via MixinInspectorLeftClick
             return;
         }
         if (state == null || state.isAir()) {

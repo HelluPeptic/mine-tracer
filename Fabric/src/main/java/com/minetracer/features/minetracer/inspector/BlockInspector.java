@@ -1,0 +1,140 @@
+package com.minetracer.features.minetracer.inspector;
+
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+
+import com.minetracer.features.minetracer.database.MineTracerLookup;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.math.BlockPos;
+
+/**
+ * Block inspector for left-click interactions
+ * Shows block placement/break history at clicked location
+ */
+public class BlockInspector extends BaseInspector {
+    
+    /**
+     * Perform block lookup for left-clicked block (CoreProtect style)
+     */
+    public void performBlockLookup(ServerPlayerEntity player, BlockPos pos) {
+        // Run in separate thread like CoreProtect does
+        CompletableFuture.runAsync(() -> {
+            try {
+                checkPreconditions(player);
+                startInspection(player);
+                
+                String worldName = player.getServerWorld().getRegistryKey().getValue().toString();
+                
+                // Get recent block logs at this position (limit to recent activity)
+                CompletableFuture<List<MineTracerLookup.BlockLogEntry>> blockLogsFuture = 
+                    MineTracerLookup.getBlockLogsInRangeAsync(pos, 0, null, worldName); // 0 range = exact position
+                
+                List<MineTracerLookup.BlockLogEntry> blockLogs = blockLogsFuture.get();
+                
+                if (blockLogs.isEmpty()) {
+                    sendMessage(player, "§3MineTracer §f- §7No block data found.");
+                    return;
+                }
+                
+                // Convert to FlatLogEntry format for paging system integration
+                java.util.List<com.minetracer.features.minetracer.MineTracerCommand.FlatLogEntry> flatList = new java.util.ArrayList<>();
+                for (MineTracerLookup.BlockLogEntry entry : blockLogs) {
+                    flatList.add(new com.minetracer.features.minetracer.MineTracerCommand.FlatLogEntry(entry, "block"));
+                }
+                
+                // Store results in the paging system like regular lookup commands
+                String inspectorQuery = "inspector:block:" + pos.getX() + "," + pos.getY() + "," + pos.getZ();
+                com.minetracer.features.minetracer.MineTracerCommand.QueryContext queryContext = 
+                    new com.minetracer.features.minetracer.MineTracerCommand.QueryContext(flatList, inspectorQuery, pos);
+                com.minetracer.features.minetracer.MineTracerCommand.lastQueries.put(player.getUuid(), queryContext);
+                
+                // Display first page using existing display system
+                com.minetracer.features.minetracer.MineTracerCommand.displayPage(
+                    player.getCommandSource(), flatList, 1, queryContext.entriesPerPage);
+                
+                if (flatList.size() > queryContext.entriesPerPage) {
+                    sendMessage(player, "§3MineTracer §f- §7Use §6/minetracer page <number> §7to view more results.");
+                }
+                
+            } catch (InspectionException e) {
+                sendMessage(player, e.getMessage());
+            } catch (Exception e) {
+                sendMessage(player, "§3MineTracer §f- §cError performing lookup.");
+                e.printStackTrace();
+            } finally {
+                finishInspection(player);
+            }
+        });
+    }
+    
+    /**
+     * Perform lookup for air blocks (when clicking on empty space)
+     */
+    public void performAirBlockLookup(ServerPlayerEntity player, BlockPos pos) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                checkPreconditions(player);
+                startInspection(player);
+                
+                String worldName = player.getServerWorld().getRegistryKey().getValue().toString();
+                
+                // Get recent block logs at this position
+                CompletableFuture<List<MineTracerLookup.BlockLogEntry>> blockLogsFuture = 
+                    MineTracerLookup.getBlockLogsInRangeAsync(pos, 0, null, worldName);
+                
+                List<MineTracerLookup.BlockLogEntry> blockLogs = blockLogsFuture.get();
+                
+                if (blockLogs.isEmpty()) {
+                    sendMessage(player, "§3MineTracer §f- §7No data found.");
+                    return;
+                }
+                
+                // Show what was broken/removed here
+                int count = 0;
+                for (MineTracerLookup.BlockLogEntry entry : blockLogs) {
+                    if (count >= 5) break;
+                    
+                    String timeAgo = getTimeAgo(entry.timestamp);
+                    String action = entry.action;
+                    String blockType = entry.blockId;
+                    String playerName = entry.playerName;
+                    
+                    String message = String.format("§f%s §f- §b%s §2%s §6%s", 
+                        timeAgo, playerName, action, blockType);
+                    
+                    if (entry.rolledBack) {
+                        message = "§m§8" + message;
+                    }
+                    
+                    sendMessage(player, message);
+                    count++;
+                }
+                
+            } catch (InspectionException e) {
+                sendMessage(player, e.getMessage());
+            } catch (Exception e) {
+                sendMessage(player, "§3MineTracer §f- §cError performing lookup.");
+                e.printStackTrace();
+            } finally {
+                finishInspection(player);
+            }
+        });
+    }
+    
+    /**
+     * Format time difference into human-readable string
+     */
+    private String getTimeAgo(java.time.Instant timestamp) {
+        long seconds = java.time.Duration.between(timestamp, java.time.Instant.now()).getSeconds();
+        
+        if (seconds < 60) {
+            return seconds + "s";
+        } else if (seconds < 3600) {
+            return (seconds / 60) + "m";
+        } else if (seconds < 86400) {
+            return (seconds / 3600) + "h";
+        } else {
+            return (seconds / 86400) + "d";
+        }
+    }
+}

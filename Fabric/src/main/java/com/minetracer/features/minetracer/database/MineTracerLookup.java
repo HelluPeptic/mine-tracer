@@ -177,14 +177,52 @@ public class MineTracerLookup {
                     params.add(userFilter);
                 }
                 
-                // Range filter
-                query.append("AND c.x BETWEEN ? AND ? AND c.z BETWEEN ? AND ? ");
-                params.add(center.getX() - range);
-                params.add(center.getX() + range);
-                params.add(center.getZ() - range);
-                params.add(center.getZ() + range);
+                // Range filter (including Y coordinate for exact matching)
+                if (range == 0) {
+                    // Exact position match
+                    query.append("AND c.x = ? AND c.y = ? AND c.z = ? ");
+                    params.add(center.getX());
+                    params.add(center.getY());
+                    params.add(center.getZ());
+                } else {
+                    // Range match
+                    query.append("AND c.x BETWEEN ? AND ? AND c.y BETWEEN ? AND ? AND c.z BETWEEN ? AND ? ");
+                    params.add(center.getX() - range);
+                    params.add(center.getX() + range);
+                    params.add(center.getY() - range);
+                    params.add(center.getY() + range);
+                    params.add(center.getZ() - range);
+                    params.add(center.getZ() + range);
+                }
                 
                 query.append("ORDER BY c.time DESC LIMIT 1000");
+                
+                // Debug: Log the query and parameters
+                System.out.println("[MineTracer] Container query: " + query.toString());
+                System.out.println("[MineTracer] Parameters: " + params.toString());
+                
+                // Debug: Show some nearby container entries to understand coordinate storage
+                if (range == 0) {
+                    try (PreparedStatement debugStmt = connection.prepareStatement(
+                        "SELECT c.x, c.y, c.z, c.action, u.user FROM minetracer_container c " +
+                        "JOIN minetracer_user u ON c.user = u.id " +
+                        "JOIN minetracer_world w ON c.wid = w.id " +
+                        "WHERE w.world = ? AND c.x BETWEEN ? AND ? AND c.z BETWEEN ? AND ? " +
+                        "ORDER BY c.time DESC LIMIT 5")) {
+                        debugStmt.setString(1, worldName);
+                        debugStmt.setInt(2, center.getX() - 2);
+                        debugStmt.setInt(3, center.getX() + 2);
+                        debugStmt.setInt(4, center.getZ() - 2);
+                        debugStmt.setInt(5, center.getZ() + 2);
+                        ResultSet debugRs = debugStmt.executeQuery();
+                        System.out.println("[MineTracer] Nearby container entries within 2 blocks:");
+                        while (debugRs.next()) {
+                            System.out.println("[MineTracer]   " + debugRs.getInt("x") + "," + debugRs.getInt("y") + "," + debugRs.getInt("z") + " - " + debugRs.getString("user") + " action:" + debugRs.getString("action"));
+                        }
+                    } catch (Exception debugE) {
+                        System.out.println("[MineTracer] Debug query failed: " + debugE.getMessage());
+                    }
+                }
                 
                 try (PreparedStatement stmt = connection.prepareStatement(query.toString())) {
                     for (int i = 0; i < params.size(); i++) {
@@ -236,12 +274,23 @@ public class MineTracerLookup {
                     params.add(userFilter);
                 }
                 
-                // Range filter
-                query.append("AND b.x BETWEEN ? AND ? AND b.z BETWEEN ? AND ? ");
-                params.add(center.getX() - range);
-                params.add(center.getX() + range);
-                params.add(center.getZ() - range);
-                params.add(center.getZ() + range);
+                // Range filter (including Y coordinate for exact matching)
+                if (range == 0) {
+                    // Exact position match
+                    query.append("AND b.x = ? AND b.y = ? AND b.z = ? ");
+                    params.add(center.getX());
+                    params.add(center.getY());
+                    params.add(center.getZ());
+                } else {
+                    // Range match
+                    query.append("AND b.x BETWEEN ? AND ? AND b.y BETWEEN ? AND ? AND b.z BETWEEN ? AND ? ");
+                    params.add(center.getX() - range);
+                    params.add(center.getX() + range);
+                    params.add(center.getY() - range);
+                    params.add(center.getY() + range);
+                    params.add(center.getZ() - range);
+                    params.add(center.getZ() + range);
+                }
                 
                 query.append("ORDER BY b.time DESC LIMIT 1000");
                 
@@ -410,13 +459,13 @@ public class MineTracerLookup {
         Set<String> playerNames = new HashSet<>();
         
         try (Connection conn = MineTracerDatabase.getConnection()) {
-            String sql = "SELECT DISTINCT username FROM minetracer_users";
+            String sql = "SELECT DISTINCT user FROM minetracer_user";
             
             try (PreparedStatement stmt = conn.prepareStatement(sql);
                  ResultSet rs = stmt.executeQuery()) {
                 
                 while (rs.next()) {
-                    playerNames.add(rs.getString("username"));
+                    playerNames.add(rs.getString("user"));
                 }
             }
         } catch (SQLException e) {

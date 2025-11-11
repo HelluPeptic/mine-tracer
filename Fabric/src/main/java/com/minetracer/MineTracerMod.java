@@ -13,6 +13,9 @@ public class MineTracerMod implements ModInitializer {
         // Initialize new database-based storage system
         NewOptimizedLogStorage.registerServerLifecycle();
         
+        // Initialize CoreProtect-style inspector system
+        com.minetracer.features.minetracer.inspector.InspectorEventHandler.init();
+        
         // Attempt to migrate existing JSON data
         try {
             MigrationUtility.migrateFromJSON();

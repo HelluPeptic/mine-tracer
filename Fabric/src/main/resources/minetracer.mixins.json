@@ -8,7 +8,8 @@
     "MixinSignBlockEntity",
     "MixinItemEntity",
     "MixinPlayerEntityDrop",
-    "ServerPlayerInteractionManagerAccessor"
+    "ServerPlayerInteractionManagerAccessor",
+    "MixinInspectorLeftClick"
   ],
   "injectors": {
     "defaultRequire": 1

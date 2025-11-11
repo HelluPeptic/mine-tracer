@@ -145,27 +145,20 @@ public class MineTracerCommand {
         } else if (currentTyping.startsWith("include:")) {
             String itemPart = currentTyping.substring(8);
             String beforeCurrent = remaining.substring(0, remaining.lastIndexOf(currentTyping));
-            int maxSuggestions = 20;
-            int count = 0;
-            for (Identifier itemId : Registries.ITEM.getIds()) {
-                if (count >= maxSuggestions)
-                    break;
-                String itemName = itemId.toString();
-                if (itemName.toLowerCase().contains(itemPart.toLowerCase()) || itemPart.isEmpty()) {
-                    builder.suggest(beforeCurrent + "include:" + itemName);
-                    count++;
-                }
+            
+            // Use CoreProtect-style suggestions from MaterialMatcher
+            java.util.List<String> itemSuggestions = com.minetracer.features.minetracer.util.MaterialMatcher.getSuggestions(itemPart);
+            java.util.List<String> blockSuggestions = com.minetracer.features.minetracer.util.MaterialMatcher.getBlockSuggestions(itemPart);
+            
+            // Add item suggestions first
+            for (String suggestion : itemSuggestions) {
+                builder.suggest(beforeCurrent + "include:" + suggestion);
             }
-            if (count < maxSuggestions) {
-                for (Identifier blockId : Registries.BLOCK.getIds()) {
-                    if (count >= maxSuggestions)
-                        break;
-                    String blockName = blockId.toString();
-                    if ((blockName.toLowerCase().contains(itemPart.toLowerCase()) || itemPart.isEmpty()) &&
-                            !Registries.ITEM.getIds().contains(blockId)) {
-                        builder.suggest(beforeCurrent + "include:" + blockName);
-                        count++;
-                    }
+            
+            // Add block suggestions that aren't already items
+            for (String suggestion : blockSuggestions) {
+                if (!itemSuggestions.contains(suggestion)) {
+                    builder.suggest(beforeCurrent + "include:" + suggestion);
                 }
             }
         }
@@ -210,8 +203,8 @@ public class MineTracerCommand {
         }
         return builder.buildFuture();
     }
-    private static final Map<UUID, QueryContext> lastQueries = new java.util.HashMap<>();
-    private static class FlatLogEntry {
+    public static final Map<UUID, QueryContext> lastQueries = new java.util.HashMap<>();
+    public static class FlatLogEntry {
         public final Object entry;
         public final String type;
         public FlatLogEntry(Object entry, String type) {
@@ -219,7 +212,7 @@ public class MineTracerCommand {
             this.type = type;
         }
     }
-    private static class QueryContext {
+    public static class QueryContext {
         public List<FlatLogEntry> results;
         public String originalQuery;
         public BlockPos queryPos;
@@ -344,9 +337,19 @@ public class MineTracerCommand {
                 }
                 if (includeItem != null && !includeItem.isEmpty()) {
                     final String includeItemFinal = includeItem;
+                    System.out.println("[MineTracer] Applying include filter: " + includeItemFinal);
+                    System.out.println("[MineTracer] Container logs before filter: " + containerLogs.size());
+                    System.out.println("[MineTracer] Block logs before filter: " + blockLogs.size());
+                    
+                    // Use CoreProtect-style partial matching instead of exact equals
                     containerLogs.removeIf(
-                            entry -> !Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItemFinal));
-                    blockLogs.removeIf(entry -> !entry.blockId.equals(includeItemFinal));
+                            entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
+                                    Registries.ITEM.getId(entry.stack.getItem()).toString(), includeItemFinal));
+                    blockLogs.removeIf(entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
+                            entry.blockId, includeItemFinal));
+                    
+                    System.out.println("[MineTracer] Container logs after filter: " + containerLogs.size());
+                    System.out.println("[MineTracer] Block logs after filter: " + blockLogs.size());
                 }
                 List<FlatLogEntry> flatList = new ArrayList<>();
                 for (MineTracerLookup.ContainerLogEntry entry : containerLogs) {
@@ -401,7 +404,7 @@ public class MineTracerCommand {
         });
         return Command.SINGLE_SUCCESS;
     }
-    private static void displayPage(ServerCommandSource source, List<FlatLogEntry> logs, int page, int entriesPerPage) {
+    public static void displayPage(ServerCommandSource source, List<FlatLogEntry> logs, int page, int entriesPerPage) {
         int totalEntries = logs.size();
         int totalPages = (totalEntries + entriesPerPage - 1) / entriesPerPage;
         int start = (page - 1) * entriesPerPage;
@@ -628,9 +631,12 @@ public class MineTracerCommand {
         }
         if (includeItem != null && !includeItem.isEmpty()) {
             final String includeItemFinal = includeItem;
+            // Use CoreProtect-style partial matching instead of exact equals
             containerLogs.removeIf(
-                    entry -> !Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItemFinal));
-            blockLogs.removeIf(entry -> !entry.blockId.equals(includeItemFinal));
+                    entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
+                            Registries.ITEM.getId(entry.stack.getItem()).toString(), includeItemFinal));
+            blockLogs.removeIf(entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
+                    entry.blockId, includeItemFinal));
         }
         int successfulRollbacks = 0;
         int failedRollbacks = 0;
