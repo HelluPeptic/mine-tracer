@@ -256,15 +256,21 @@ public class MineTracerDatabase {
     }
     
     private static void createIndexes(Statement statement) throws SQLException {
-        // Container table indexes
+        // Container table indexes (with composite indexes for better query performance)
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_container_location ON minetracer_container(wid,x,z,time);");
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_container_lookup ON minetracer_container(wid,x,y,z,time);");
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_container_user ON minetracer_container(user,time);");
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_container_type ON minetracer_container(type,time);");
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_container_time_user ON minetracer_container(time,user);");
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_container_rolled_back ON minetracer_container(rolled_back,time);");
         
-        // Block table indexes
+        // Block table indexes (with composite indexes for better query performance)
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_block_location ON minetracer_block(wid,x,z,time);");
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_block_lookup ON minetracer_block(wid,x,y,z,time);");
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_block_user ON minetracer_block(user,time);");
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_block_type ON minetracer_block(type,time);");
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_block_time_user ON minetracer_block(time,user);");
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_block_rolled_back ON minetracer_block(rolled_back,time);");
         
         // Sign table indexes
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_sign_location ON minetracer_sign(wid,x,z,time);");

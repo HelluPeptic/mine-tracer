@@ -13,6 +13,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.time.Instant;
 
+import com.minetracer.features.minetracer.cache.UserCache;
+
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.StringNbtReader;
@@ -21,7 +23,7 @@ import net.minecraft.registry.Registries;
 
 /**
  * MineTracer Database Lookup System
- * High-performance queries with proper indexing
+ * High-performance queries with proper indexing and user caching
  */
 public class MineTracerLookup {
     
@@ -196,33 +198,6 @@ public class MineTracerLookup {
                 }
                 
                 query.append("ORDER BY c.time DESC LIMIT 1000");
-                
-                // Debug: Log the query and parameters
-                System.out.println("[MineTracer] Container query: " + query.toString());
-                System.out.println("[MineTracer] Parameters: " + params.toString());
-                
-                // Debug: Show some nearby container entries to understand coordinate storage
-                if (range == 0) {
-                    try (PreparedStatement debugStmt = connection.prepareStatement(
-                        "SELECT c.x, c.y, c.z, c.action, u.user FROM minetracer_container c " +
-                        "JOIN minetracer_user u ON c.user = u.id " +
-                        "JOIN minetracer_world w ON c.wid = w.id " +
-                        "WHERE w.world = ? AND c.x BETWEEN ? AND ? AND c.z BETWEEN ? AND ? " +
-                        "ORDER BY c.time DESC LIMIT 5")) {
-                        debugStmt.setString(1, worldName);
-                        debugStmt.setInt(2, center.getX() - 2);
-                        debugStmt.setInt(3, center.getX() + 2);
-                        debugStmt.setInt(4, center.getZ() - 2);
-                        debugStmt.setInt(5, center.getZ() + 2);
-                        ResultSet debugRs = debugStmt.executeQuery();
-                        System.out.println("[MineTracer] Nearby container entries within 2 blocks:");
-                        while (debugRs.next()) {
-                            System.out.println("[MineTracer]   " + debugRs.getInt("x") + "," + debugRs.getInt("y") + "," + debugRs.getInt("z") + " - " + debugRs.getString("user") + " action:" + debugRs.getString("action"));
-                        }
-                    } catch (Exception debugE) {
-                        System.out.println("[MineTracer] Debug query failed: " + debugE.getMessage());
-                    }
-                }
                 
                 try (PreparedStatement stmt = connection.prepareStatement(query.toString())) {
                     for (int i = 0; i < params.size(); i++) {
@@ -486,7 +461,7 @@ public class MineTracerLookup {
             try (Connection connection = MineTracerDatabase.getConnection()) {
                 if (connection == null) return results;
                 
-                String query = "SELECT b.time, u.user, b.x, b.y, b.z, b.type, b.data, b.action, b.rolled_back " +
+                String query = "SELECT b.time, u.user, b.x, b.y, b.z, b.type, b.nbt, b.data, b.action, b.rolled_back " +
                               "FROM minetracer_block b " +
                               "JOIN minetracer_user u ON b.user = u.id " +
                               "JOIN minetracer_world w ON b.wid = w.id " +
@@ -562,9 +537,9 @@ public class MineTracerLookup {
             try (Connection connection = MineTracerDatabase.getConnection()) {
                 if (connection == null) return results;
                 
-                String query = "SELECT k.time, u.user, k.x, k.y, k.z, k.weapon, k.target, k.rolled_back " +
+                String query = "SELECT k.time, u.user, k.x, k.y, k.z, k.victim_name, k.rolled_back " +
                               "FROM minetracer_kill k " +
-                              "JOIN minetracer_user u ON k.user = u.id " +
+                              "JOIN minetracer_user u ON k.killer_user = u.id " +
                               "JOIN minetracer_world w ON k.wid = w.id " +
                               "WHERE u.user = ? AND w.world = ? " +
                               "ORDER BY k.time DESC LIMIT 1000";
@@ -580,8 +555,7 @@ public class MineTracerLookup {
                     int x = rs.getInt("x");
                     int y = rs.getInt("y");
                     int z = rs.getInt("z");
-                    String weapon = rs.getString("weapon");
-                    String target = rs.getString("target");
+                    String target = rs.getString("victim_name");
                     boolean rolledBack = rs.getInt("rolled_back") > 0;
                     
                     BlockPos pos = new BlockPos(x, y, z);
@@ -634,7 +608,7 @@ public class MineTracerLookup {
                     
                     BlockPos pos = new BlockPos(x, y, z);
                     ItemStack stack = deserializeItemStack(data, type, amount);
-                    String actionString = action == 1 ? "pickup" : "drop";
+                    String actionString = action == 0 ? "pickup" : "drop";
                     
                     results.add(new ItemPickupDropLogEntry(actionString, user, pos, stack, worldName,
                                                          Instant.ofEpochSecond(time), rolledBack));
@@ -647,5 +621,173 @@ public class MineTracerLookup {
             
             return results;
         });
+    }
+
+    /**
+     * Get sign logs in range (async)
+     */
+    public static CompletableFuture<List<SignLogEntry>> getSignLogsInRangeAsync(
+            BlockPos center, int range, String userFilter, String worldName) {
+        return CompletableFuture.supplyAsync(() -> {
+            List<SignLogEntry> results = new ArrayList<>();
+            
+            try (Connection connection = MineTracerDatabase.getConnection()) {
+                if (connection == null) return results;
+                
+                StringBuilder query = new StringBuilder(
+                    "SELECT s.time, u.user, s.x, s.y, s.z, s.action, s.text, s.nbt, s.rolled_back " +
+                    "FROM minetracer_sign s " +
+                    "JOIN minetracer_user u ON s.user = u.id " +
+                    "JOIN minetracer_world w ON s.wid = w.id " +
+                    "WHERE w.world = ? "
+                );
+                
+                List<Object> params = new ArrayList<>();
+                params.add(worldName);
+                
+                if (userFilter != null && !userFilter.isEmpty()) {
+                    query.append("AND u.user = ? ");
+                    params.add(userFilter);
+                }
+                
+                // Range filter (including Y coordinate for exact matching)
+                if (range == 0) {
+                    // Exact position match
+                    query.append("AND s.x = ? AND s.y = ? AND s.z = ? ");
+                    params.add(center.getX());
+                    params.add(center.getY());
+                    params.add(center.getZ());
+                } else {
+                    // Range match
+                    query.append("AND s.x BETWEEN ? AND ? AND s.y BETWEEN ? AND ? AND s.z BETWEEN ? AND ? ");
+                    params.add(center.getX() - range);
+                    params.add(center.getX() + range);
+                    params.add(center.getY() - range);
+                    params.add(center.getY() + range);
+                    params.add(center.getZ() - range);
+                    params.add(center.getZ() + range);
+                }
+                
+                query.append("ORDER BY s.time DESC LIMIT 1000");
+                
+                try (PreparedStatement stmt = connection.prepareStatement(query.toString())) {
+                    for (int i = 0; i < params.size(); i++) {
+                        stmt.setObject(i + 1, params.get(i));
+                    }
+                    
+                    ResultSet rs = stmt.executeQuery();
+                    while (rs.next()) {
+                        long time = rs.getLong("time");
+                        String user = rs.getString("user");
+                        int x = rs.getInt("x");
+                        int y = rs.getInt("y");
+                        int z = rs.getInt("z");
+                        String action = rs.getString("action");
+                        String text = rs.getString("text");
+                        String nbt = rs.getString("nbt");
+                        boolean rolledBack = rs.getInt("rolled_back") > 0;
+                        
+                        BlockPos pos = new BlockPos(x, y, z);
+                        
+                        // Range check if needed
+                        if (center != null && pos.getSquaredDistance(center) > range * range) {
+                            continue;
+                        }
+                        
+                        results.add(new SignLogEntry(action, user, pos, text, nbt, 
+                                                   Instant.ofEpochSecond(time), rolledBack));
+                    }
+                }
+                
+            } catch (Exception e) {
+                System.err.println("[MineTracer] Error in sign lookup: " + e.getMessage());
+                e.printStackTrace();
+            }
+            
+            return results;
+        }, queryExecutor);
+    }
+
+    /**
+     * Get kill logs in range (async)
+     */
+    public static CompletableFuture<List<KillLogEntry>> getKillLogsInRangeAsync(
+            BlockPos center, int range, String userFilter, String worldName) {
+        return CompletableFuture.supplyAsync(() -> {
+            List<KillLogEntry> results = new ArrayList<>();
+            
+            try (Connection connection = MineTracerDatabase.getConnection()) {
+                if (connection == null) return results;
+                
+                StringBuilder query = new StringBuilder(
+                    "SELECT k.time, u.user, k.x, k.y, k.z, k.victim_name, k.rolled_back " +
+                    "FROM minetracer_kill k " +
+                    "JOIN minetracer_user u ON k.killer_user = u.id " +
+                    "JOIN minetracer_world w ON k.wid = w.id " +
+                    "WHERE w.world = ? "
+                );
+                
+                List<Object> params = new ArrayList<>();
+                params.add(worldName);
+                
+                if (userFilter != null && !userFilter.isEmpty()) {
+                    query.append("AND u.user = ? ");
+                    params.add(userFilter);
+                }
+                
+                // Range filter (including Y coordinate for exact matching)
+                if (range == 0) {
+                    // Exact position match
+                    query.append("AND k.x = ? AND k.y = ? AND k.z = ? ");
+                    params.add(center.getX());
+                    params.add(center.getY());
+                    params.add(center.getZ());
+                } else {
+                    // Range match
+                    query.append("AND k.x BETWEEN ? AND ? AND k.y BETWEEN ? AND ? AND k.z BETWEEN ? AND ? ");
+                    params.add(center.getX() - range);
+                    params.add(center.getX() + range);
+                    params.add(center.getY() - range);
+                    params.add(center.getY() + range);
+                    params.add(center.getZ() - range);
+                    params.add(center.getZ() + range);
+                }
+                
+                query.append("ORDER BY k.time DESC LIMIT 1000");
+                
+                try (PreparedStatement stmt = connection.prepareStatement(query.toString())) {
+                    for (int i = 0; i < params.size(); i++) {
+                        stmt.setObject(i + 1, params.get(i));
+                    }
+                    
+                    ResultSet rs = stmt.executeQuery();
+                    while (rs.next()) {
+                        long time = rs.getLong("time");
+                        String user = rs.getString("user");
+                        int x = rs.getInt("x");
+                        int y = rs.getInt("y");
+                        int z = rs.getInt("z");
+                        String target = rs.getString("victim_name");
+                        boolean rolledBack = rs.getInt("rolled_back") > 0;
+                        
+                        BlockPos pos = new BlockPos(x, y, z);
+                        
+                        // Range check if needed
+                        if (center != null && pos.getSquaredDistance(center) > range * range) {
+                            continue;
+                        }
+                        
+                        results.add(new KillLogEntry(user, target, pos, worldName,
+                                                   Instant.ofEpochSecond(time), rolledBack));
+                    }
+                }
+                
+            } catch (Exception e) {
+                System.err.println("[MineTracer] Error in kill lookup: " + e.getMessage());
+                e.printStackTrace();
+            }
+            
+            return results;
+        }, queryExecutor);
     }
 }

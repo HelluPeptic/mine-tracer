@@ -2,6 +2,8 @@ package com.minetracer.features.minetracer.inspector;
 
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.minetracer.features.minetracer.config.MineTracerConfig;
+
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
@@ -26,7 +28,8 @@ public abstract class BaseInspector {
             boolean isActive = (boolean) throttleInfo[0];
             long lastTime = (long) throttleInfo[1];
             
-            if (isActive || (System.currentTimeMillis() - lastTime) < 100) {
+            // Use config value for cooldown
+            if (isActive || (System.currentTimeMillis() - lastTime) < MineTracerConfig.INSPECTOR_COOLDOWN_MS) {
                 throw new InspectionException("§3MineTracer §f- §cDatabase is busy. Please wait.");
             }
         }

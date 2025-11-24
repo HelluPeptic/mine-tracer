@@ -6,21 +6,59 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Utility class for exact matching of materials/items
- * Only matches exact item names, not partial matches
+ * Utility class for matching materials/items with include/exclude support
+ * Supports comma-separated lists and exact matching like CoreProtect
  */
 public class MaterialMatcher {
     
     /**
-     * Check if an item/block ID matches the include filter (exact matching only)
-     * Only matches exact item names, not partial matches
+     * Check if an item/block ID matches the include filter
+     * Supports comma-separated lists: "stone,dirt,diamond_ore"
      */
     public static boolean matchesIncludeFilter(String itemId, String includeFilter) {
         if (includeFilter == null || includeFilter.isEmpty()) {
             return true; // No filter means include all
         }
         
-        String filterLower = includeFilter.toLowerCase();
+        // Support multiple filters separated by commas
+        String[] filters = includeFilter.split(",");
+        for (String filter : filters) {
+            if (matchesSingleFilter(itemId, filter.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * Check if an item/block ID matches the exclude filter
+     * Returns true if item should be EXCLUDED
+     * Supports comma-separated lists: "tnt,bedrock,netherite"
+     */
+    public static boolean matchesExcludeFilter(String itemId, String excludeFilter) {
+        if (excludeFilter == null || excludeFilter.isEmpty()) {
+            return false; // No filter means exclude nothing
+        }
+        
+        // Support multiple filters separated by commas
+        String[] filters = excludeFilter.split(",");
+        for (String filter : filters) {
+            if (matchesSingleFilter(itemId, filter.trim())) {
+                return true; // Found a match, so exclude this item
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * Match a single filter against an item ID (exact matching only)
+     */
+    private static boolean matchesSingleFilter(String itemId, String filter) {
+        if (filter == null || filter.isEmpty()) {
+            return false;
+        }
+        
+        String filterLower = filter.toLowerCase();
         String itemIdLower = itemId.toLowerCase();
         
         // 1. Exact match with full namespace (e.g., "minecraft:diamond")

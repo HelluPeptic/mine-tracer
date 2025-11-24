@@ -14,8 +14,13 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import me.lucko.fabric.api.permissions.v0.Permissions;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.StringNbtReader;
+import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
@@ -26,6 +31,28 @@ import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 public class MineTracerCommand {
+    
+    // Undo tracking system - stores last rollback/restore operation per player
+    private static class UndoOperation {
+        final String type; // "rollback" or "restore"
+        final List<MineTracerLookup.BlockLogEntry> blockLogs;
+        final List<MineTracerLookup.SignLogEntry> signLogs;
+        final List<MineTracerLookup.ContainerLogEntry> containerLogs;
+        final Instant timestamp;
+        
+        UndoOperation(String type, List<MineTracerLookup.BlockLogEntry> blockLogs,
+                     List<MineTracerLookup.SignLogEntry> signLogs,
+                     List<MineTracerLookup.ContainerLogEntry> containerLogs) {
+            this.type = type;
+            this.blockLogs = new ArrayList<>(blockLogs);
+            this.signLogs = new ArrayList<>(signLogs);
+            this.containerLogs = new ArrayList<>(containerLogs);
+            this.timestamp = Instant.now();
+        }
+    }
+    
+    private static final Map<UUID, UndoOperation> lastOperations = new java.util.concurrent.ConcurrentHashMap<>();
+    
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("minetracer")
@@ -39,6 +66,14 @@ public class MineTracerCommand {
                             .then(CommandManager.argument("arg", StringArgumentType.greedyString())
                                     .suggests(MineTracerCommand::suggestPlayers)
                                     .executes(MineTracerCommand::rollback)))
+                    .then(CommandManager.literal("restore")
+                            .requires(source -> Permissions.check(source, "minetracer.command.restore", 2))
+                            .then(CommandManager.argument("arg", StringArgumentType.greedyString())
+                                    .suggests(MineTracerCommand::suggestPlayers)
+                                    .executes(MineTracerCommand::restore)))
+                    .then(CommandManager.literal("undo")
+                            .requires(source -> Permissions.check(source, "minetracer.command.undo", 2))
+                            .executes(MineTracerCommand::undo))
                     .then(CommandManager.literal("page")
                             .requires(source -> Permissions.check(source, "minetracer.command.page", 2))
                             .then(CommandManager
@@ -55,7 +90,7 @@ public class MineTracerCommand {
                             .executes(MineTracerCommand::showSaveHistory))
                     .executes(context -> {
                         ServerCommandSource source = context.getSource();
-                        source.sendError(Text.literal("Invalid command usage. Use /minetracer <lookup|rollback|page|inspector|save|saves>"));
+                        source.sendError(Text.literal("Invalid command usage. Use /minetracer <lookup|rollback|restore|undo|page|inspector|save|saves>"));
                         return 0;
                     }));
         });
@@ -236,6 +271,7 @@ public class MineTracerCommand {
             int range = 100;
             java.util.Set<String> actionFilters = new java.util.HashSet<>();
             String includeItem = null;
+            String excludeItem = null;
             for (String part : arg.split(" ")) {
                 if (part.startsWith("user:")) {
                     userFilter = part.substring(5);
@@ -260,8 +296,10 @@ public class MineTracerCommand {
                             actionFilters.add(act);
                         }
                     }
-                } else if (part.startsWith("include:")) {
-                    includeItem = part.substring(8);
+                } else if (part.startsWith("include:") || part.startsWith("i:")) {
+                    includeItem = part.startsWith("include:") ? part.substring(8) : part.substring(2);
+                } else if (part.startsWith("exclude:") || part.startsWith("e:")) {
+                    excludeItem = part.startsWith("exclude:") ? part.substring(8) : part.substring(2);
                 }
             }
             BlockPos playerPos = source.getPlayer().getBlockPos();
@@ -294,15 +332,15 @@ public class MineTracerCommand {
             String worldName = player.getServerWorld().getRegistryKey().getValue().toString();
             if (hasUser && !hasRange) {
                 blockLogsFuture = MineTracerLookup.getBlockLogsForUserAsync(userFilter, worldName);
-                signLogsFuture = CompletableFuture.supplyAsync(() -> new ArrayList<>()); // Signs not implemented yet
+                signLogsFuture = CompletableFuture.supplyAsync(() -> new ArrayList<>()); // Signs for user not implemented yet
                 containerLogsFuture = MineTracerLookup.getContainerLogsForUserAsync(userFilter, worldName);
                 killLogsFuture = MineTracerLookup.getKillLogsForUserAsync(userFilter, worldName);
                 itemLogsFuture = MineTracerLookup.getItemPickupDropLogsForUserAsync(userFilter, worldName);
             } else {
                 blockLogsFuture = MineTracerLookup.getBlockLogsInRangeAsync(playerPos, range, userFilter, worldName);
-                signLogsFuture = CompletableFuture.supplyAsync(() -> new ArrayList<>()); // Signs not implemented yet
+                signLogsFuture = MineTracerLookup.getSignLogsInRangeAsync(playerPos, range, userFilter, worldName);
                 containerLogsFuture = MineTracerLookup.getContainerLogsInRangeAsync(playerPos, range, userFilter, worldName);
-                killLogsFuture = CompletableFuture.supplyAsync(() -> new ArrayList<>()); // Kill range queries not implemented yet
+                killLogsFuture = MineTracerLookup.getKillLogsInRangeAsync(playerPos, range, userFilter, worldName);
                 itemLogsFuture = userFilter != null ? MineTracerLookup.getItemPickupDropLogsForUserAsync(userFilter, worldName) : CompletableFuture.supplyAsync(() -> new ArrayList<>());
             }
             try {
@@ -337,9 +375,6 @@ public class MineTracerCommand {
                 }
                 if (includeItem != null && !includeItem.isEmpty()) {
                     final String includeItemFinal = includeItem;
-                    System.out.println("[MineTracer] Applying include filter: " + includeItemFinal);
-                    System.out.println("[MineTracer] Container logs before filter: " + containerLogs.size());
-                    System.out.println("[MineTracer] Block logs before filter: " + blockLogs.size());
                     
                     // Use CoreProtect-style partial matching instead of exact equals
                     containerLogs.removeIf(
@@ -347,9 +382,20 @@ public class MineTracerCommand {
                                     Registries.ITEM.getId(entry.stack.getItem()).toString(), includeItemFinal));
                     blockLogs.removeIf(entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
                             entry.blockId, includeItemFinal));
+                    itemLogs.removeIf(entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
+                            Registries.ITEM.getId(entry.stack.getItem()).toString(), includeItemFinal));
+                }
+                if (excludeItem != null && !excludeItem.isEmpty()) {
+                    final String excludeItemFinal = excludeItem;
                     
-                    System.out.println("[MineTracer] Container logs after filter: " + containerLogs.size());
-                    System.out.println("[MineTracer] Block logs after filter: " + blockLogs.size());
+                    // Exclude matching items
+                    containerLogs.removeIf(
+                            entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
+                                    Registries.ITEM.getId(entry.stack.getItem()).toString(), excludeItemFinal));
+                    blockLogs.removeIf(entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
+                            entry.blockId, excludeItemFinal));
+                    itemLogs.removeIf(entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
+                            Registries.ITEM.getId(entry.stack.getItem()).toString(), excludeItemFinal));
                 }
                 List<FlatLogEntry> flatList = new ArrayList<>();
                 for (MineTracerLookup.ContainerLogEntry entry : containerLogs) {
@@ -542,8 +588,20 @@ public class MineTracerCommand {
             pos = ((MineTracerLookup.ItemPickupDropLogEntry) entry).pos;
         }
         if (pos != null) {
-            return Text.literal("(x" + pos.getX() + "/y" + pos.getY() + "/z" + pos.getZ() + ")")
-                    .formatted(Formatting.GOLD);
+            // Create clickable coordinates that teleport the player
+            String coordText = "(x" + pos.getX() + "/y" + pos.getY() + "/z" + pos.getZ() + ")";
+            String teleportCommand = "/tp @s " + pos.getX() + " " + pos.getY() + " " + pos.getZ();
+            
+            return Text.literal(coordText)
+                    .formatted(Formatting.GOLD)
+                    .styled(style -> style
+                            .withClickEvent(new net.minecraft.text.ClickEvent(
+                                    net.minecraft.text.ClickEvent.Action.RUN_COMMAND, 
+                                    teleportCommand))
+                            .withHoverEvent(new net.minecraft.text.HoverEvent(
+                                    net.minecraft.text.HoverEvent.Action.SHOW_TEXT,
+                                    Text.literal("Click to teleport to this location").formatted(Formatting.YELLOW)))
+                            .withUnderline(true));
         }
         return Text.literal("").formatted(Formatting.GRAY);
     }
@@ -559,6 +617,8 @@ public class MineTracerCommand {
         int range = 100;
         java.util.Set<String> actionFilters = new java.util.HashSet<>();
         String includeItem = null;
+        String excludeItem = null;
+        boolean preview = false;
         for (String part : arg.split(" ")) {
             if (part.startsWith("user:")) {
                 userFilter = part.substring(5);
@@ -583,8 +643,12 @@ public class MineTracerCommand {
                         actionFilters.add(act);
                     }
                 }
-            } else if (part.startsWith("include:")) {
-                includeItem = part.substring(8);
+            } else if (part.startsWith("include:") || part.startsWith("i:")) {
+                includeItem = part.startsWith("include:") ? part.substring(8) : part.substring(2);
+            } else if (part.startsWith("exclude:") || part.startsWith("e:")) {
+                excludeItem = part.startsWith("exclude:") ? part.substring(8) : part.substring(2);
+            } else if (part.equals("#preview")) {
+                preview = true;
             }
         }
         BlockPos playerPos = source.getPlayer().getBlockPos();
@@ -602,12 +666,27 @@ public class MineTracerCommand {
                     "Rollback requires at least 2 of these filters: range:<blocks>, time:<duration>, user:<player>. Examples: 'range:50 user:PlayerName' or 'time:1h user:PlayerName' or 'range:20 time:30m'"));
             return Command.SINGLE_SUCCESS;
         }
-        List<OptimizedLogStorage.BlockLogEntry> blockLogs = OptimizedLogStorage.getBlockLogsInRange(playerPos, range, userFilter);
-        List<OptimizedLogStorage.SignLogEntry> signLogs = OptimizedLogStorage.getSignLogsInRange(playerPos, range, userFilter);
-        List<OptimizedLogStorage.LogEntry> containerLogs = OptimizedLogStorage.getLogsInRange(playerPos, range);
+        
+        // Use the new database lookup system (same as lookup command)
+        String worldName = source.getPlayer().getServerWorld().getRegistryKey().getValue().toString();
+        List<MineTracerLookup.BlockLogEntry> blockLogs;
+        List<MineTracerLookup.SignLogEntry> signLogs;
+        List<MineTracerLookup.ContainerLogEntry> containerLogs;
+        List<MineTracerLookup.KillLogEntry> killLogs;
+        
+        try {
+            blockLogs = MineTracerLookup.getBlockLogsInRangeAsync(playerPos, range, userFilter, worldName).get();
+            signLogs = MineTracerLookup.getSignLogsInRangeAsync(playerPos, range, userFilter, worldName).get();
+            containerLogs = MineTracerLookup.getContainerLogsInRangeAsync(playerPos, range, userFilter, worldName).get();
+            killLogs = MineTracerLookup.getKillLogsInRangeAsync(playerPos, range, userFilter, worldName).get();
+        } catch (Exception e) {
+            source.sendError(Text.literal("[MineTracer] Error querying database: " + e.getMessage()));
+            e.printStackTrace();
+            return Command.SINGLE_SUCCESS;
+        }
+        
         boolean filterByKiller = actionFilters.contains("kill");
-        List<OptimizedLogStorage.KillLogEntry> killLogs = OptimizedLogStorage.getKillLogsInRange(playerPos, range, userFilter,
-                filterByKiller);
+        
         if (userFilter != null) {
             final String userFilterFinal = userFilter;
             containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
@@ -638,6 +717,15 @@ public class MineTracerCommand {
             blockLogs.removeIf(entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
                     entry.blockId, includeItemFinal));
         }
+        if (excludeItem != null && !excludeItem.isEmpty()) {
+            final String excludeItemFinal = excludeItem;
+            // Exclude matching items
+            containerLogs.removeIf(
+                    entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
+                            Registries.ITEM.getId(entry.stack.getItem()).toString(), excludeItemFinal));
+            blockLogs.removeIf(entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
+                    entry.blockId, excludeItemFinal));
+        }
         int successfulRollbacks = 0;
         int failedRollbacks = 0;
         ServerWorld world = source.getWorld();
@@ -647,6 +735,40 @@ public class MineTracerCommand {
                     .formatted(Formatting.YELLOW), false);
             return Command.SINGLE_SUCCESS;
         }
+        
+        // Preview mode - show ghost blocks to the player
+        if (preview) {
+            source.sendFeedback(() -> Text.literal("[MineTracer] PREVIEW MODE - Showing ghost blocks...")
+                    .formatted(Formatting.YELLOW), false);
+            source.sendFeedback(() -> Text.literal("Found " + totalActions + " actions to preview.")
+                    .formatted(Formatting.AQUA), false);
+            
+            ServerPlayerEntity player = source.getPlayer();
+            int ghostBlocksShown = 0;
+            
+            // Send ghost blocks for block changes
+            for (MineTracerLookup.BlockLogEntry entry : blockLogs) {
+                if (!entry.rolledBack) {
+                    if ("broke".equals(entry.action)) {
+                        // Show the block that would be restored
+                        sendGhostBlock(player, entry.pos, entry.blockId, entry.nbt);
+                        ghostBlocksShown++;
+                    } else if ("placed".equals(entry.action)) {
+                        // Show air where block would be removed
+                        sendGhostBlock(player, entry.pos, "minecraft:air", null);
+                        ghostBlocksShown++;
+                    }
+                }
+            }
+            
+            final int finalGhostBlocksShown = ghostBlocksShown;
+            source.sendFeedback(() -> Text.literal("Showing " + finalGhostBlocksShown + " ghost blocks. They will disappear when you relog or move away.")
+                    .formatted(Formatting.GRAY), false);
+            source.sendFeedback(() -> Text.literal("Run without #preview to execute the rollback.")
+                    .formatted(Formatting.YELLOW), false);
+            return Command.SINGLE_SUCCESS;
+        }
+        
         source.sendFeedback(() -> Text.literal("[MineTracer] Found " + totalActions + " actions to rollback.")
                 .formatted(Formatting.AQUA), false);
         if (actionFilters.isEmpty()) {
@@ -657,38 +779,34 @@ public class MineTracerCommand {
                     .formatted(Formatting.GRAY), false);
         }
         if (actionFilters.isEmpty()) {
-            for (OptimizedLogStorage.BlockLogEntry entry : blockLogs) {
+            for (MineTracerLookup.BlockLogEntry entry : blockLogs) {
                 if ("broke".equals(entry.action) && !entry.rolledBack) {
                     if (performBlockPlaceRollback(world, entry)) {
-                        entry.rolledBack = true;
                         successfulRollbacks++;
                     } else {
                         failedRollbacks++;
                     }
                 }
             }
-            for (OptimizedLogStorage.BlockLogEntry entry : blockLogs) {
+            for (MineTracerLookup.BlockLogEntry entry : blockLogs) {
                 if ("placed".equals(entry.action) && !entry.rolledBack) {
                     if (performBlockBreakRollback(world, entry)) {
-                        entry.rolledBack = true;
                         successfulRollbacks++;
                     } else {
                         failedRollbacks++;
                     }
                 }
             }
-            for (OptimizedLogStorage.LogEntry entry : containerLogs) {
+            for (MineTracerLookup.ContainerLogEntry entry : containerLogs) {
                 if (!entry.rolledBack) {
                     if ("withdrew".equals(entry.action)) {
                         if (performWithdrawalRollback(world, entry)) {
-                            entry.rolledBack = true;
                             successfulRollbacks++;
                         } else {
                             failedRollbacks++;
                         }
                     } else if ("deposited".equals(entry.action)) {
                         if (performDepositRollback(world, entry)) {
-                            entry.rolledBack = true;
                             successfulRollbacks++;
                         } else {
                             failedRollbacks++;
@@ -696,10 +814,9 @@ public class MineTracerCommand {
                     }
                 }
             }
-            for (OptimizedLogStorage.SignLogEntry entry : signLogs) {
+            for (MineTracerLookup.SignLogEntry entry : signLogs) {
                 if ("edit".equals(entry.action) && !entry.rolledBack) {
                     if (performSignRollback(world, entry)) {
-                        entry.rolledBack = true;
                         successfulRollbacks++;
                     } else {
                         failedRollbacks++;
@@ -707,18 +824,16 @@ public class MineTracerCommand {
                 }
             }
         } else {
-            for (OptimizedLogStorage.LogEntry entry : containerLogs) {
+            for (MineTracerLookup.ContainerLogEntry entry : containerLogs) {
                 if (!entry.rolledBack) {
                     if ("withdrew".equals(entry.action)) {
                         if (performWithdrawalRollback(world, entry)) {
-                            entry.rolledBack = true;
                             successfulRollbacks++;
                         } else {
                             failedRollbacks++;
                         }
                     } else if ("deposited".equals(entry.action)) {
                         if (performDepositRollback(world, entry)) {
-                            entry.rolledBack = true;
                             successfulRollbacks++;
                         } else {
                             failedRollbacks++;
@@ -726,18 +841,16 @@ public class MineTracerCommand {
                     }
                 }
             }
-            for (OptimizedLogStorage.BlockLogEntry entry : blockLogs) {
+            for (MineTracerLookup.BlockLogEntry entry : blockLogs) {
                 if (!entry.rolledBack) {
                     if ("placed".equals(entry.action)) {
                         if (performBlockBreakRollback(world, entry)) {
-                            entry.rolledBack = true;
                             successfulRollbacks++;
                         } else {
                             failedRollbacks++;
                         }
                     } else if ("broke".equals(entry.action)) {
                         if (performBlockPlaceRollback(world, entry)) {
-                            entry.rolledBack = true;
                             successfulRollbacks++;
                         } else {
                             failedRollbacks++;
@@ -745,10 +858,9 @@ public class MineTracerCommand {
                     }
                 }
             }
-            for (OptimizedLogStorage.SignLogEntry entry : signLogs) {
+            for (MineTracerLookup.SignLogEntry entry : signLogs) {
                 if ("edit".equals(entry.action) && !entry.rolledBack) {
                     if (performSignRollback(world, entry)) {
-                        entry.rolledBack = true;
                         successfulRollbacks++;
                     } else {
                         failedRollbacks++;
@@ -763,6 +875,18 @@ public class MineTracerCommand {
                     "[MineTracer] Rollback complete: " + finalSuccessfulRollbacks + " actions restored, " +
                             finalFailedRollbacks + " failed.")
                     .formatted(Formatting.GREEN), false);
+            
+            // Store operation for undo
+            try {
+                UUID playerId = source.getPlayer().getUuid();
+                UndoOperation undoOp = new UndoOperation("rollback", blockLogs, signLogs, containerLogs);
+                lastOperations.put(playerId, undoOp);
+                source.sendFeedback(() -> Text.literal(
+                    "[MineTracer] Use /minetracer undo to revert this rollback.")
+                    .formatted(Formatting.GRAY), false);
+            } catch (Exception e) {
+                // Player might not exist in some contexts
+            }
         } else {
             source.sendFeedback(
                     () -> Text.literal("[MineTracer] No actions found to rollback.").formatted(Formatting.YELLOW),
@@ -770,7 +894,360 @@ public class MineTracerCommand {
         }
         return Command.SINGLE_SUCCESS;
     }
-    private static boolean performWithdrawalRollback(ServerWorld world, OptimizedLogStorage.LogEntry entry) {
+    
+    /**
+     * Restore command - reapplies actions that were rolled back
+     * This is the inverse of rollback (undoing the undo)
+     */
+    public static int restore(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+        if (!Permissions.check(source, "minetracer.command.restore", 2)) {
+            source.sendError(Text.literal("You do not have permission to use this command."));
+            return 0;
+        }
+        String arg = StringArgumentType.getString(ctx, "arg");
+        
+        // Check for preview mode
+        boolean previewMode = arg.contains("#preview");
+        if (previewMode) {
+            arg = arg.replace("#preview", "").trim();
+        }
+        
+        String userFilter = null;
+        String timeArg = null;
+        int range = 100;
+        java.util.Set<String> actionFilters = new java.util.HashSet<>();
+        String includeItem = null;
+        String excludeItem = null;
+        
+        for (String part : arg.split(" ")) {
+            if (part.startsWith("user:")) {
+                userFilter = part.substring(5);
+            } else if (part.startsWith("time:")) {
+                timeArg = part.substring(5);
+            } else if (part.startsWith("range:")) {
+                try {
+                    range = Integer.parseInt(part.substring(6));
+                } catch (Exception ignored) {
+                }
+            } else if (part.startsWith("action:")) {
+                String actions = part.substring(7).toLowerCase();
+                for (String act : actions.split(",")) {
+                    act = act.trim();
+                    if (act.equals("place")) {
+                        act = "placed";
+                    }
+                    if (act.equals("sign")) {
+                        act = "edit";
+                    }
+                    if (!act.isEmpty()) {
+                        actionFilters.add(act);
+                    }
+                }
+            } else if (part.startsWith("include:") || part.startsWith("i:")) {
+                includeItem = part.startsWith("include:") ? part.substring(8) : part.substring(2);
+            } else if (part.startsWith("exclude:") || part.startsWith("e:")) {
+                excludeItem = part.startsWith("exclude:") ? part.substring(8) : part.substring(2);
+            }
+        }
+        
+        BlockPos playerPos = source.getPlayer().getBlockPos();
+        Instant cutoff = null;
+        if (timeArg != null) {
+            long seconds = parseTimeArg(timeArg);
+            cutoff = Instant.now().minusSeconds(seconds);
+        }
+        
+        boolean hasRange = range != 100;
+        boolean hasTime = timeArg != null;
+        boolean hasUser = userFilter != null;
+        int restrictionCount = (hasRange ? 1 : 0) + (hasTime ? 1 : 0) + (hasUser ? 1 : 0);
+        
+        if (restrictionCount < 2) {
+            source.sendError(Text.literal(
+                    "Restore requires at least 2 of these filters: range:<blocks>, time:<duration>, user:<player>. Add #preview to see what would be restored."));
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        // Use the new database lookup system (same as lookup and rollback commands)
+        String worldName = source.getPlayer().getServerWorld().getRegistryKey().getValue().toString();
+        List<MineTracerLookup.BlockLogEntry> blockLogs;
+        List<MineTracerLookup.SignLogEntry> signLogs;
+        List<MineTracerLookup.ContainerLogEntry> containerLogs;
+        
+        try {
+            blockLogs = MineTracerLookup.getBlockLogsInRangeAsync(playerPos, range, userFilter, worldName).get();
+            signLogs = MineTracerLookup.getSignLogsInRangeAsync(playerPos, range, userFilter, worldName).get();
+            containerLogs = MineTracerLookup.getContainerLogsInRangeAsync(playerPos, range, userFilter, worldName).get();
+        } catch (Exception e) {
+            source.sendError(Text.literal("[MineTracer] Error querying database: " + e.getMessage()));
+            e.printStackTrace();
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        if (userFilter != null) {
+            final String userFilterFinal = userFilter;
+            containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
+        }
+        
+        if (cutoff != null) {
+            final Instant cutoffFinal = cutoff;
+            blockLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+            signLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+            containerLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+        }
+        
+        if (!actionFilters.isEmpty()) {
+            containerLogs.removeIf(
+                    entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
+            blockLogs.removeIf(
+                    entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
+            signLogs.removeIf(
+                    entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
+        }
+        
+        if (includeItem != null && !includeItem.isEmpty()) {
+            final String includeItemFinal = includeItem;
+            containerLogs.removeIf(
+                    entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
+                            Registries.ITEM.getId(entry.stack.getItem()).toString(), includeItemFinal));
+            blockLogs.removeIf(entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
+                    entry.blockId, includeItemFinal));
+        }
+        
+        if (excludeItem != null && !excludeItem.isEmpty()) {
+            final String excludeItemFinal = excludeItem;
+            containerLogs.removeIf(
+                    entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
+                            Registries.ITEM.getId(entry.stack.getItem()).toString(), excludeItemFinal));
+            blockLogs.removeIf(entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
+                    entry.blockId, excludeItemFinal));
+        }
+        
+        int totalActions = containerLogs.size() + blockLogs.size() + signLogs.size();
+        if (totalActions == 0) {
+            source.sendFeedback(() -> Text.literal("[MineTracer] No actions found matching the specified filters.")
+                    .formatted(Formatting.YELLOW), false);
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        // Preview mode - show what would be restored without actually doing it
+        if (previewMode) {
+            source.sendFeedback(() -> Text.literal("[MineTracer] Preview: Would restore " + totalActions + " actions:")
+                    .formatted(Formatting.AQUA), false);
+            source.sendFeedback(() -> Text.literal("  - " + blockLogs.size() + " block changes")
+                    .formatted(Formatting.GRAY), false);
+            source.sendFeedback(() -> Text.literal("  - " + containerLogs.size() + " container transactions")
+                    .formatted(Formatting.GRAY), false);
+            source.sendFeedback(() -> Text.literal("  - " + signLogs.size() + " sign edits")
+                    .formatted(Formatting.GRAY), false);
+            source.sendFeedback(() -> Text.literal("Remove #preview to execute the restore.")
+                    .formatted(Formatting.YELLOW), false);
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        int successfulRestores = 0;
+        int failedRestores = 0;
+        ServerWorld world = source.getWorld();
+        
+        source.sendFeedback(() -> Text.literal("[MineTracer] Found " + totalActions + " actions to restore.")
+                .formatted(Formatting.AQUA), false);
+        
+        // Restore = inverse of rollback, so we apply the original actions
+        // placed -> place block, broke -> remove block
+        // withdrew -> remove from container, deposited -> add to container
+        
+        for (MineTracerLookup.BlockLogEntry entry : blockLogs) {
+            if ("placed".equals(entry.action) && !entry.rolledBack) {
+                // Re-place the block
+                if (performBlockRestore(world, entry)) {
+                    successfulRestores++;
+                } else {
+                    failedRestores++;
+                }
+            } else if ("broke".equals(entry.action) && !entry.rolledBack) {
+                // Re-break the block
+                if (performBlockBreakRestore(world, entry)) {
+                    successfulRestores++;
+                } else {
+                    failedRestores++;
+                }
+            }
+        }
+        
+        for (MineTracerLookup.ContainerLogEntry entry : containerLogs) {
+            if (!entry.rolledBack) {
+                if ("withdrew".equals(entry.action)) {
+                    // Restore withdrawal = remove item from container
+                    if (performWithdrawalRestore(world, entry)) {
+                        successfulRestores++;
+                    } else {
+                        failedRestores++;
+                    }
+                } else if ("deposited".equals(entry.action)) {
+                    // Restore deposit = add item to container
+                    if (performDepositRestore(world, entry)) {
+                        successfulRestores++;
+                    } else {
+                        failedRestores++;
+                    }
+                }
+            }
+        }
+        
+        if (successfulRestores > 0 || failedRestores > 0) {
+            final int finalSuccessfulRestores = successfulRestores;
+            final int finalFailedRestores = failedRestores;
+            source.sendFeedback(() -> Text.literal(
+                    "[MineTracer] Restore complete: " + finalSuccessfulRestores + " actions reapplied, " +
+                            finalFailedRestores + " failed.")
+                    .formatted(Formatting.GREEN), false);
+            
+            // Store operation for undo
+            try {
+                UUID playerId = source.getPlayer().getUuid();
+                UndoOperation undoOp = new UndoOperation("restore", blockLogs, signLogs, containerLogs);
+                lastOperations.put(playerId, undoOp);
+                source.sendFeedback(() -> Text.literal(
+                    "[MineTracer] Use /minetracer undo to revert this restore.")
+                    .formatted(Formatting.GRAY), false);
+            } catch (Exception e) {
+                // Player might not exist in some contexts
+            }
+        } else {
+            source.sendFeedback(
+                    () -> Text.literal("[MineTracer] No actions found to restore.").formatted(Formatting.YELLOW),
+                    false);
+        }
+        
+        return Command.SINGLE_SUCCESS;
+    }
+    
+    /**
+     * Undo command - reverts the last rollback or restore operation
+     */
+    public static int undo(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+        if (!Permissions.check(source, "minetracer.command.undo", 2)) {
+            source.sendError(Text.literal("You do not have permission to use this command."));
+            return 0;
+        }
+        
+        try {
+            UUID playerId = source.getPlayer().getUuid();
+            UndoOperation lastOp = lastOperations.get(playerId);
+            
+            if (lastOp == null) {
+                source.sendError(Text.literal("[MineTracer] No recent rollback or restore to undo."));
+                return 0;
+            }
+            
+            // Check if operation is recent (within 5 minutes)
+            long minutesAgo = Duration.between(lastOp.timestamp, Instant.now()).toMinutes();
+            if (minutesAgo > 5) {
+                source.sendError(Text.literal("[MineTracer] Last operation was " + minutesAgo + " minutes ago. Undo is only available for recent operations (within 5 minutes)."));
+                return 0;
+            }
+            
+            int successfulUndos = 0;
+            int failedUndos = 0;
+            ServerWorld world = source.getWorld();
+            
+            source.sendFeedback(() -> Text.literal("[MineTracer] Undoing last " + lastOp.type + " operation...")
+                    .formatted(Formatting.AQUA), false);
+            
+            // Undo rollback = restore
+            // Undo restore = rollback
+            boolean isUndoingRollback = "rollback".equals(lastOp.type);
+            
+            for (MineTracerLookup.BlockLogEntry entry : lastOp.blockLogs) {
+                if (isUndoingRollback) {
+                    // Undo rollback: restore the original action
+                    if ("broke".equals(entry.action)) {
+                        if (performBlockBreakRestore(world, entry)) {
+                            successfulUndos++;
+                        } else {
+                            failedUndos++;
+                        }
+                    } else if ("placed".equals(entry.action)) {
+                        if (performBlockRestore(world, entry)) {
+                            successfulUndos++;
+                        } else {
+                            failedUndos++;
+                        }
+                    }
+                } else {
+                    // Undo restore: rollback the action
+                    if ("broke".equals(entry.action)) {
+                        if (performBlockPlaceRollback(world, entry)) {
+                            successfulUndos++;
+                        } else {
+                            failedUndos++;
+                        }
+                    } else if ("placed".equals(entry.action)) {
+                        if (performBlockBreakRollback(world, entry)) {
+                            successfulUndos++;
+                        } else {
+                            failedUndos++;
+                        }
+                    }
+                }
+            }
+            
+            for (MineTracerLookup.ContainerLogEntry entry : lastOp.containerLogs) {
+                if (isUndoingRollback) {
+                    // Undo rollback: restore original action
+                    if ("withdrew".equals(entry.action)) {
+                        if (performWithdrawalRestore(world, entry)) {
+                            successfulUndos++;
+                        } else {
+                            failedUndos++;
+                        }
+                    } else if ("deposited".equals(entry.action)) {
+                        if (performDepositRestore(world, entry)) {
+                            successfulUndos++;
+                        } else {
+                            failedUndos++;
+                        }
+                    }
+                } else {
+                    // Undo restore: rollback the action
+                    if ("withdrew".equals(entry.action)) {
+                        if (performWithdrawalRollback(world, entry)) {
+                            successfulUndos++;
+                        } else {
+                            failedUndos++;
+                        }
+                    } else if ("deposited".equals(entry.action)) {
+                        if (performDepositRollback(world, entry)) {
+                            successfulUndos++;
+                        } else {
+                            failedUndos++;
+                        }
+                    }
+                }
+            }
+            
+            // Clear the undo history after executing
+            lastOperations.remove(playerId);
+            
+            final int finalSuccessfulUndos = successfulUndos;
+            final int finalFailedUndos = failedUndos;
+            source.sendFeedback(() -> Text.literal(
+                    "[MineTracer] Undo complete: " + finalSuccessfulUndos + " changes reverted, " +
+                            finalFailedUndos + " failed.")
+                    .formatted(Formatting.GREEN), false);
+            
+        } catch (Exception e) {
+            source.sendError(Text.literal("[MineTracer] Failed to undo: " + e.getMessage()));
+            e.printStackTrace();
+            return 0;
+        }
+        
+        return Command.SINGLE_SUCCESS;
+    }
+    
+    private static boolean performWithdrawalRollback(ServerWorld world, MineTracerLookup.ContainerLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
             ItemStack stackToRestore = entry.stack.copy();
@@ -786,7 +1263,7 @@ public class MineTracerCommand {
             return false;
         }
     }
-    private static boolean performDepositRollback(ServerWorld world, OptimizedLogStorage.LogEntry entry) {
+    private static boolean performDepositRollback(ServerWorld world, MineTracerLookup.ContainerLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
             ItemStack stackToRemove = entry.stack.copy();
@@ -849,7 +1326,7 @@ public class MineTracerCommand {
         }
         return remaining;
     }
-    private static boolean performBlockBreakRollback(ServerWorld world, OptimizedLogStorage.BlockLogEntry entry) {
+    private static boolean performBlockBreakRollback(ServerWorld world, MineTracerLookup.BlockLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
             world.setBlockState(pos, net.minecraft.block.Blocks.AIR.getDefaultState());
@@ -858,7 +1335,7 @@ public class MineTracerCommand {
             return false;
         }
     }
-    private static boolean performBlockPlaceRollback(ServerWorld world, OptimizedLogStorage.BlockLogEntry entry) {
+    private static boolean performBlockPlaceRollback(ServerWorld world, MineTracerLookup.BlockLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
             net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK
@@ -918,7 +1395,7 @@ public class MineTracerCommand {
         }
         return state;
     }
-    private static boolean performSignRollback(ServerWorld world, OptimizedLogStorage.SignLogEntry entry) {
+    private static boolean performSignRollback(ServerWorld world, MineTracerLookup.SignLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
             net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
@@ -966,6 +1443,72 @@ public class MineTracerCommand {
             return false;
         }
     }
+    
+    // Restore helper methods (inverse of rollback operations)
+    
+    /**
+     * Restore a withdrawal - removes the item from container (undoes the rollback that added it back)
+     */
+    private static boolean performWithdrawalRestore(ServerWorld world, MineTracerLookup.ContainerLogEntry entry) {
+        // Restore withdrawal = remove item (same as deposit rollback)
+        return performDepositRollback(world, entry);
+    }
+    
+    /**
+     * Restore a deposit - adds the item back to container (undoes the rollback that removed it)
+     */
+    private static boolean performDepositRestore(ServerWorld world, MineTracerLookup.ContainerLogEntry entry) {
+        // Restore deposit = add item (same as withdrawal rollback)
+        return performWithdrawalRollback(world, entry);
+    }
+    
+    /**
+     * Restore a block placement - places the block again
+     */
+    private static boolean performBlockRestore(ServerWorld world, MineTracerLookup.BlockLogEntry entry) {
+        try {
+            BlockPos pos = entry.pos;
+            String blockId = entry.blockId;
+            net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK.get(new Identifier(blockId));
+            if (block != null) {
+                net.minecraft.block.BlockState newState = block.getDefaultState();
+                world.setBlockState(pos, newState, 3);
+                
+                // Apply NBT if available
+                if (entry.nbt != null && !entry.nbt.isEmpty()) {
+                    try {
+                        net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader.parse(entry.nbt);
+                        net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
+                        if (blockEntity != null) {
+                            blockEntity.readNbt(nbt);
+                            blockEntity.markDirty();
+                        }
+                    } catch (Exception nbtError) {
+                        // NBT parsing failed, but block was placed
+                    }
+                }
+                
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    /**
+     * Restore a block break - removes the block again
+     */
+    private static boolean performBlockBreakRestore(ServerWorld world, MineTracerLookup.BlockLogEntry entry) {
+        try {
+            BlockPos pos = entry.pos;
+            world.setBlockState(pos, net.minecraft.block.Blocks.AIR.getDefaultState(), 3);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
     public static int lookupPage(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
         if (!Permissions.check(source, "minetracer.command.page", 2)) {
@@ -1071,6 +1614,28 @@ public class MineTracerCommand {
         } else {
             double days = seconds / 86400.0;
             return String.format("%.1fd", days);
+        }
+    }
+    
+    /**
+     * Send a ghost block packet to a player (client-side only)
+     * The block appears only to this player and disappears when they relog or the chunk reloads
+     */
+    private static void sendGhostBlock(ServerPlayerEntity player, BlockPos pos, String blockId, String nbtString) {
+        try {
+            // Parse the block ID and get the block state
+            Identifier identifier = new Identifier(blockId);
+            Block block = Registries.BLOCK.get(identifier);
+            BlockState state = block.getDefaultState();
+            
+            // Send the block update packet to the player only
+            BlockUpdateS2CPacket packet = new BlockUpdateS2CPacket(pos, state);
+            player.networkHandler.sendPacket(packet);
+            
+            // Note: NBT data (for signs, chests, etc.) would require additional block entity packets
+            // For now, we just show the block type as a ghost block
+        } catch (Exception e) {
+            // Silently fail if block ID is invalid - ghost block preview is best-effort
         }
     }
 }

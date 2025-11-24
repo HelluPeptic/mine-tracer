@@ -219,13 +219,13 @@ public class MixinScreenHandler {
                 ItemStack itemStack = minetracer$createItemStackFromKey(itemKey);
                 if (!itemStack.isEmpty()) {
                     itemStack.setCount(containerChange);
-                    OptimizedLogStorage.logContainerAction("deposit", player, minetracer$containerPos, itemStack);
+                    OptimizedLogStorage.logContainerAction("deposited", player, minetracer$containerPos, itemStack);
                 }
             } else if (containerChange < 0) {
                 ItemStack itemStack = minetracer$createItemStackFromKey(itemKey);
                 if (!itemStack.isEmpty()) {
                     itemStack.setCount(-containerChange);
-                    OptimizedLogStorage.logContainerAction("withdrawal", player, minetracer$containerPos, itemStack);
+                    OptimizedLogStorage.logContainerAction("withdrew", player, minetracer$containerPos, itemStack);
                 }
             }
         }
@@ -238,13 +238,13 @@ public class MixinScreenHandler {
                 ItemStack itemStack = minetracer$createItemStackFromKey(itemKey);
                 if (!itemStack.isEmpty()) {
                     itemStack.setCount(containerChange); // Use actual deposited amount
-                    OptimizedLogStorage.logContainerAction("deposit", player, minetracer$containerPos, itemStack);
+                    OptimizedLogStorage.logContainerAction("deposited", player, minetracer$containerPos, itemStack);
                 }
             } else if (containerChange < 0 && playerChange > 0) {
                 ItemStack itemStack = minetracer$createItemStackFromKey(itemKey);
                 if (!itemStack.isEmpty()) {
                     itemStack.setCount(-containerChange); // Use actual withdrawn amount
-                    OptimizedLogStorage.logContainerAction("withdrawal", player, minetracer$containerPos, itemStack);
+                    OptimizedLogStorage.logContainerAction("withdrew", player, minetracer$containerPos, itemStack);
                 }
             }
         }
