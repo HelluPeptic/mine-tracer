@@ -1247,16 +1247,45 @@ public class MineTracerCommand {
         return Command.SINGLE_SUCCESS;
     }
     
+    /**
+     * Gets the proper inventory for a container at the given position.
+     * Handles double chests by using the BlockState's inventory provider.
+     */
+    private static Inventory getContainerInventory(ServerWorld world, BlockPos pos) {
+        BlockState blockState = world.getBlockState(pos);
+        
+        // For ChestBlock (including double chests), use the block's inventory method
+        if (blockState.getBlock() instanceof net.minecraft.block.ChestBlock) {
+            net.minecraft.block.ChestBlock chestBlock = (net.minecraft.block.ChestBlock) blockState.getBlock();
+            // This properly handles double chests by returning the combined 54-slot inventory
+            return net.minecraft.block.ChestBlock.getInventory(chestBlock, blockState, world, pos, true);
+        }
+        
+        // For other containers, use the BlockEntity directly
+        net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
+        if (blockEntity instanceof Inventory) {
+            return (Inventory) blockEntity;
+        }
+        
+        return null;
+    }
+    
     private static boolean performWithdrawalRollback(ServerWorld world, MineTracerLookup.ContainerLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
             ItemStack stackToRestore = entry.stack.copy();
-            net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
-            if (blockEntity instanceof Inventory) {
-                Inventory inventory = (Inventory) blockEntity;
+            Inventory inventory = getContainerInventory(world, pos);
+            if (inventory != null) {
                 ItemStack remaining = addItemToInventory(inventory, stackToRestore);
                 inventory.markDirty();
-                return remaining.getCount() < stackToRestore.getCount();
+                boolean success = remaining.getCount() < stackToRestore.getCount();
+                
+                // CoreProtect-style: Mark as rolled back in database
+                if (success) {
+                    markContainerEntryRolledBack(entry, world);
+                }
+                
+                return success;
             }
             return false;
         } catch (RuntimeException e) {
@@ -1267,12 +1296,18 @@ public class MineTracerCommand {
         try {
             BlockPos pos = entry.pos;
             ItemStack stackToRemove = entry.stack.copy();
-            net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
-            if (blockEntity instanceof Inventory) {
-                Inventory inventory = (Inventory) blockEntity;
+            Inventory inventory = getContainerInventory(world, pos);
+            if (inventory != null) {
                 ItemStack remaining = removeItemFromInventory(inventory, stackToRemove);
                 inventory.markDirty();
-                return remaining.getCount() < stackToRemove.getCount();
+                boolean success = remaining.getCount() < stackToRemove.getCount();
+                
+                // CoreProtect-style: Mark as rolled back in database
+                if (success) {
+                    markContainerEntryRolledBack(entry, world);
+                }
+                
+                return success;
             }
             return false;
         } catch (RuntimeException e) {
@@ -1330,6 +1365,10 @@ public class MineTracerCommand {
         try {
             BlockPos pos = entry.pos;
             world.setBlockState(pos, net.minecraft.block.Blocks.AIR.getDefaultState());
+            
+            // CoreProtect-style: Mark as rolled back in database
+            markBlockEntryRolledBack(entry, world);
+            
             return true;
         } catch (Exception e) {
             return false;
@@ -1379,6 +1418,10 @@ public class MineTracerCommand {
                 } else {
                     world.setBlockState(pos, blockState);
                 }
+                
+                // CoreProtect-style: Mark as rolled back in database
+                markBlockEntryRolledBack(entry, world);
+                
                 return true;
             }
             return false;
@@ -1432,6 +1475,10 @@ public class MineTracerCommand {
                         }
                         signEntity.markDirty();
                         world.updateListeners(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+                        
+                        // CoreProtect-style: Mark as rolled back in database
+                        markSignEntryRolledBack(entry, world);
+                        
                         return true;
                     } catch (Exception e) {
                         return false;
@@ -1614,6 +1661,105 @@ public class MineTracerCommand {
         } else {
             double days = seconds / 86400.0;
             return String.format("%.1fd", days);
+        }
+    }
+    
+    /**
+     * Mark a container entry as rolled back in database (CoreProtect-style)
+     */
+    private static void markContainerEntryRolledBack(MineTracerLookup.ContainerLogEntry entry, ServerWorld world) {
+        try {
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try (java.sql.Connection conn = com.minetracer.features.minetracer.database.MineTracerDatabase.getConnection()) {
+                    if (conn == null) return;
+                    
+                    String worldName = world.getRegistryKey().getValue().toString();
+                    String sql = "UPDATE minetracer_container SET rolled_back = 1 WHERE " +
+                               "user = (SELECT id FROM minetracer_user WHERE user = ?) AND " +
+                               "wid = (SELECT id FROM minetracer_world WHERE world = ?) AND " +
+                               "x = ? AND y = ? AND z = ? AND time = ? AND rolled_back = 0";
+                    
+                    try (java.sql.PreparedStatement stmt = conn.prepareStatement(sql)) {
+                        stmt.setString(1, entry.playerName);
+                        stmt.setString(2, worldName);
+                        stmt.setInt(3, entry.pos.getX());
+                        stmt.setInt(4, entry.pos.getY());
+                        stmt.setInt(5, entry.pos.getZ());
+                        stmt.setLong(6, entry.timestamp.getEpochSecond());
+                        stmt.executeUpdate();
+                    }
+                } catch (Exception e) {
+                    System.err.println("[MineTracer] Failed to mark container entry as rolled back: " + e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            // Silently fail - rollback still succeeded in-game
+        }
+    }
+    
+    /**
+     * Mark a block entry as rolled back in database (CoreProtect-style)
+     */
+    private static void markBlockEntryRolledBack(MineTracerLookup.BlockLogEntry entry, ServerWorld world) {
+        try {
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try (java.sql.Connection conn = com.minetracer.features.minetracer.database.MineTracerDatabase.getConnection()) {
+                    if (conn == null) return;
+                    
+                    String worldName = world.getRegistryKey().getValue().toString();
+                    String sql = "UPDATE minetracer_block SET rolled_back = 1 WHERE " +
+                               "user = (SELECT id FROM minetracer_user WHERE user = ?) AND " +
+                               "wid = (SELECT id FROM minetracer_world WHERE world = ?) AND " +
+                               "x = ? AND y = ? AND z = ? AND time = ? AND rolled_back = 0";
+                    
+                    try (java.sql.PreparedStatement stmt = conn.prepareStatement(sql)) {
+                        stmt.setString(1, entry.playerName);
+                        stmt.setString(2, worldName);
+                        stmt.setInt(3, entry.pos.getX());
+                        stmt.setInt(4, entry.pos.getY());
+                        stmt.setInt(5, entry.pos.getZ());
+                        stmt.setLong(6, entry.timestamp.getEpochSecond());
+                        stmt.executeUpdate();
+                    }
+                } catch (Exception e) {
+                    System.err.println("[MineTracer] Failed to mark block entry as rolled back: " + e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            // Silently fail - rollback still succeeded in-game
+        }
+    }
+    
+    /**
+     * Mark a sign entry as rolled back in database (CoreProtect-style)
+     */
+    private static void markSignEntryRolledBack(MineTracerLookup.SignLogEntry entry, ServerWorld world) {
+        try {
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                try (java.sql.Connection conn = com.minetracer.features.minetracer.database.MineTracerDatabase.getConnection()) {
+                    if (conn == null) return;
+                    
+                    String worldName = world.getRegistryKey().getValue().toString();
+                    String sql = "UPDATE minetracer_sign SET rolled_back = 1 WHERE " +
+                               "user = (SELECT id FROM minetracer_user WHERE user = ?) AND " +
+                               "wid = (SELECT id FROM minetracer_world WHERE world = ?) AND " +
+                               "x = ? AND y = ? AND z = ? AND time = ? AND rolled_back = 0";
+                    
+                    try (java.sql.PreparedStatement stmt = conn.prepareStatement(sql)) {
+                        stmt.setString(1, entry.playerName);
+                        stmt.setString(2, worldName);
+                        stmt.setInt(3, entry.pos.getX());
+                        stmt.setInt(4, entry.pos.getY());
+                        stmt.setInt(5, entry.pos.getZ());
+                        stmt.setLong(6, entry.timestamp.getEpochSecond());
+                        stmt.executeUpdate();
+                    }
+                } catch (Exception e) {
+                    System.err.println("[MineTracer] Failed to mark sign entry as rolled back: " + e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            // Silently fail - rollback still succeeded in-game
         }
     }
     

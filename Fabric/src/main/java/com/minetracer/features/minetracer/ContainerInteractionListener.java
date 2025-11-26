@@ -16,7 +16,17 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.ArrayList;
 public class ContainerInteractionListener {
-    private static final Map<UUID, Map<BlockPos, List<ItemStack>>> containerSnapshots = new ConcurrentHashMap<>();
+    private static class ContainerSnapshot {
+        final List<ItemStack> items;
+        final World world;
+        
+        ContainerSnapshot(List<ItemStack> items, World world) {
+            this.items = items;
+            this.world = world;
+        }
+    }
+    
+    private static final Map<UUID, Map<BlockPos, ContainerSnapshot>> containerSnapshots = new ConcurrentHashMap<>();
     private static final Map<UUID, Long> lastCheckTime = new ConcurrentHashMap<>();
     private static final long CHECK_INTERVAL = 1000;
     private static final java.util.Set<Block> TRACKED_CONTAINERS = java.util.Set.of(
@@ -48,7 +58,10 @@ public class ContainerInteractionListener {
             }
             BlockPos pos = hitResult.getBlockPos();
             Block block = world.getBlockState(pos).getBlock();
+            
             if (TRACKED_CONTAINERS.contains(block)) {
+                // Store position for MixinScreenHandler to use (for SimpleInventory chests)
+                ContainerPositionTracker.setLastOpenedContainer(player.getUuid(), pos);
                 takeContainerSnapshot((ServerPlayerEntity) player, world, pos);
                 scheduleContainerCheck((ServerPlayerEntity) player, pos);
             }
@@ -68,39 +81,50 @@ public class ContainerInteractionListener {
                 snapshot.add(inventory.getStack(i).copy());
             }
             containerSnapshots.computeIfAbsent(playerId, k -> new ConcurrentHashMap<>())
-                             .put(pos, snapshot);
+                             .put(pos, new ContainerSnapshot(snapshot, world));
         } catch (Exception e) {
+            System.err.println("[MineTracer] Error in takeContainerSnapshot: " + e.getMessage());
+            e.printStackTrace();
         }
     }
     private static void scheduleContainerCheck(ServerPlayerEntity player, BlockPos pos) {
         UUID playerId = player.getUuid();
         lastCheckTime.put(playerId, System.currentTimeMillis());
-        java.util.concurrent.CompletableFuture.runAsync(() -> {
+        
+        // Schedule the check to run on the server thread after a delay
+        new Thread(() -> {
             try {
                 Thread.sleep(2000); // Wait 2 seconds for interaction
-                checkContainerChanges(player, pos);
+                // Execute the check on the server thread
+                player.getServer().execute(() -> {
+                    checkContainerChanges(player, pos);
+                });
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-        });
+        }).start();
     }
     private static void checkContainerChanges(ServerPlayerEntity player, BlockPos pos) {
         try {
             UUID playerId = player.getUuid();
-            Map<BlockPos, List<ItemStack>> playerSnapshots = containerSnapshots.get(playerId);
+            Map<BlockPos, ContainerSnapshot> playerSnapshots = containerSnapshots.get(playerId);
             if (playerSnapshots == null || !playerSnapshots.containsKey(pos)) {
                 return;
             }
-            List<ItemStack> oldSnapshot = playerSnapshots.get(pos);
-            World world = player.getServerWorld();
+            ContainerSnapshot snapshot = playerSnapshots.get(pos);
+            List<ItemStack> oldSnapshot = snapshot.items;
+            World world = snapshot.world;
+            
             BlockEntity blockEntity = world.getBlockEntity(pos);
             if (!(blockEntity instanceof Inventory)) {
                 return;
             }
             Inventory inventory = (Inventory) blockEntity;
+            
             for (int i = 0; i < Math.min(oldSnapshot.size(), inventory.size()); i++) {
                 ItemStack oldStack = oldSnapshot.get(i);
                 ItemStack newStack = inventory.getStack(i);
+                
                 if (!ItemStack.areEqual(oldStack, newStack)) {
                     if (oldStack.isEmpty() && !newStack.isEmpty()) {
                         NewOptimizedLogStorage.logContainerAction("deposited", player, pos, newStack);
@@ -119,11 +143,14 @@ public class ContainerInteractionListener {
                     }
                 }
             }
+            
             playerSnapshots.remove(pos);
             if (playerSnapshots.isEmpty()) {
                 containerSnapshots.remove(playerId);
             }
         } catch (Exception e) {
+            System.err.println("[MineTracer] Error in checkContainerChanges: " + e.getMessage());
+            e.printStackTrace();
         }
     }
     public static void cleanupPlayerSnapshots(UUID playerId) {

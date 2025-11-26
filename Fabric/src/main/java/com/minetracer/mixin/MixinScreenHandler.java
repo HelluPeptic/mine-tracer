@@ -13,6 +13,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import com.minetracer.features.minetracer.OptimizedLogStorage;
+import com.minetracer.features.minetracer.ContainerPositionTracker;
 import java.util.HashMap;
 import java.util.Map;
 @Mixin(ScreenHandler.class)
@@ -82,8 +83,9 @@ public class MixinScreenHandler {
                         minetracer$trackedPlayerSlots.put(i, stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
                     }
                 }
+                // Fallback: Use last opened container position for SimpleInventory chests
                 if (minetracer$containerPos == null) {
-                    minetracer$containerPos = player.getBlockPos();
+                    minetracer$containerPos = ContainerPositionTracker.getLastOpenedContainer(player.getUuid());
                 }
             }
             minetracer$lastSlot999Time = System.currentTimeMillis();
@@ -123,8 +125,9 @@ public class MixinScreenHandler {
                     minetracer$trackedPlayerSlots.put(i, stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
                 }
             }
+            // Fallback: Use last opened container position for SimpleInventory chests
             if (minetracer$containerPos == null) {
-                minetracer$containerPos = player.getBlockPos();
+                minetracer$containerPos = ContainerPositionTracker.getLastOpenedContainer(player.getUuid());
             }
         }
         minetracer$lastClickTime = System.currentTimeMillis();
@@ -135,6 +138,15 @@ public class MixinScreenHandler {
         if (!minetracer$isContainerInteraction || minetracer$trackedSlots == null) {
             return;
         }
+        
+        // Skip logging if we couldn't determine container position
+        if (minetracer$containerPos == null) {
+            minetracer$trackedSlots.clear();
+            minetracer$trackedPlayerSlots.clear();
+            minetracer$isContainerInteraction = false;
+            return;
+        }
+        
         ScreenHandler self = (ScreenHandler) (Object) this;
         minetracer$detectInventoryTransfers(self, player);
         if (!minetracer$isDragOperation) {
@@ -211,39 +223,47 @@ public class MixinScreenHandler {
     }
     private void minetracer$analyzeCurrentTransfers(Map<String, Integer> containerItemChanges,
             Map<String, Integer> playerItemChanges, PlayerEntity player) {
+        System.out.println("[MineTracer-DEBUG] Analyzing current transfers. Container changes: " + containerItemChanges.size());
         for (String itemKey : containerItemChanges.keySet()) {
             if (itemKey.equals("air"))
                 continue;
             int containerChange = containerItemChanges.get(itemKey);
+            System.out.println("[MineTracer-DEBUG] Item " + itemKey + " change: " + containerChange + " at position: " + minetracer$containerPos);
             if (containerChange > 0) {
                 ItemStack itemStack = minetracer$createItemStackFromKey(itemKey);
                 if (!itemStack.isEmpty()) {
                     itemStack.setCount(containerChange);
+                    System.out.println("[MineTracer-DEBUG] Logging DEPOSIT: " + itemStack + " x" + containerChange + " at " + minetracer$containerPos);
                     OptimizedLogStorage.logContainerAction("deposited", player, minetracer$containerPos, itemStack);
                 }
             } else if (containerChange < 0) {
                 ItemStack itemStack = minetracer$createItemStackFromKey(itemKey);
                 if (!itemStack.isEmpty()) {
                     itemStack.setCount(-containerChange);
+                    System.out.println("[MineTracer-DEBUG] Logging WITHDRAWAL: " + itemStack + " x" + (-containerChange) + " at " + minetracer$containerPos);
                     OptimizedLogStorage.logContainerAction("withdrew", player, minetracer$containerPos, itemStack);
                 }
             }
         }
     }
     private void minetracer$analyzeAccumulatedTransfers(PlayerEntity player) {
+        System.out.println("[MineTracer-DEBUG] Analyzing accumulated transfers. Container changes: " + minetracer$accumulatedContainerChanges.size());
         for (String itemKey : minetracer$accumulatedContainerChanges.keySet()) {
             int containerChange = minetracer$accumulatedContainerChanges.getOrDefault(itemKey, 0);
             int playerChange = minetracer$accumulatedPlayerChanges.getOrDefault(itemKey, 0);
+            System.out.println("[MineTracer-DEBUG] Accumulated - Item: " + itemKey + ", Container: " + containerChange + ", Player: " + playerChange + " at " + minetracer$containerPos);
             if (containerChange > 0 && playerChange < 0) {
                 ItemStack itemStack = minetracer$createItemStackFromKey(itemKey);
                 if (!itemStack.isEmpty()) {
                     itemStack.setCount(containerChange); // Use actual deposited amount
+                    System.out.println("[MineTracer-DEBUG] Logging ACCUMULATED DEPOSIT: " + itemStack + " x" + containerChange + " at " + minetracer$containerPos);
                     OptimizedLogStorage.logContainerAction("deposited", player, minetracer$containerPos, itemStack);
                 }
             } else if (containerChange < 0 && playerChange > 0) {
                 ItemStack itemStack = minetracer$createItemStackFromKey(itemKey);
                 if (!itemStack.isEmpty()) {
                     itemStack.setCount(-containerChange); // Use actual withdrawn amount
+                    System.out.println("[MineTracer-DEBUG] Logging ACCUMULATED WITHDRAWAL: " + itemStack + " x" + (-containerChange) + " at " + minetracer$containerPos);
                     OptimizedLogStorage.logContainerAction("withdrew", player, minetracer$containerPos, itemStack);
                 }
             }

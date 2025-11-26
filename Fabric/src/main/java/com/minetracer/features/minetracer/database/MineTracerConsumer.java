@@ -70,7 +70,7 @@ public class MineTracerConsumer implements Runnable {
             consumerThread = new Thread(new MineTracerConsumer(), "MineTracer-Consumer");
             consumerThread.setDaemon(true);
             consumerThread.start();
-            System.out.println("[MineTracer] Consumer thread started");
+            System.out.println("[MineTracer] Consumer thread started - Thread ID: " + consumerThread.getId());
         }
     }
     
