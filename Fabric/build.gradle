@@ -1,0 +1,132 @@
+plugins {
+    id 'fabric-loom' version "${loom_version}"
+    id 'maven-publish'
+    id 'idea'
+}
+
+repositories {
+    mavenCentral()
+    maven { 
+        url = "https://maven.fabricmc.net/" 
+        content {
+            includeGroup "net.fabricmc"
+            includeGroup "fabric-api"
+        }
+    }
+    maven { url = "https://maven.terraformersmc.com/releases/" }
+    maven { url = "https://maven.blamejared.com/" }
+    maven { url = "https://maven.shedaniel.me/" }
+    maven { url "https://github.com/Serilum/.maven/raw/maven/" }
+    // Added LuckPerms official repository for API resolution
+    maven { url 'https://repo.lucko.me/' }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${minecraft_version}"
+    mappings "net.fabricmc:yarn:${yarn_mappings}:v2"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_version}"
+    modImplementation "net.fabricmc:fabric-loader:${loader_version}"
+
+    // Add Sponge Mixin for annotation processing and compile
+    implementation "org.spongepowered:mixin:0.8.5"
+    annotationProcessor "org.spongepowered:mixin:0.8.5"
+    compileOnly "org.spongepowered:mixin:0.8.5"
+
+    implementation "org.jetbrains:annotations:23.0.0"
+    implementation group: 'com.google.code.findbugs', name: 'jsr305', version: '3.0.1'
+    implementation 'com.google.code.gson:gson:2.10.1'
+    annotationProcessor 'com.google.code.gson:gson:2.10.1'
+    compileOnly 'com.google.code.gson:gson:2.10.1'
+    implementation 'com.google.guava:guava:32.1.2-jre'
+    annotationProcessor 'com.google.guava:guava:32.1.2-jre'
+    compileOnly 'com.google.guava:guava:32.1.2-jre'
+
+    // FastUtil for high-performance collections
+    implementation 'it.unimi.dsi:fastutil:8.5.12'
+    include 'it.unimi.dsi:fastutil:8.5.12'
+    
+    // Caffeine for high-performance caching
+    implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
+    include 'com.github.ben-manes.caffeine:caffeine:3.1.8'
+
+    // SQLite database driver
+    implementation 'org.xerial:sqlite-jdbc:3.43.2.0'
+    include 'org.xerial:sqlite-jdbc:3.43.2.0'
+
+    modApi("com.terraformersmc:modmenu:11.0.3") { exclude(module: "fabric-api") }
+
+    modImplementation "me.lucko:fabric-permissions-api:0.2-SNAPSHOT"
+}
+
+loom {
+    mixin {
+        defaultRefmapName.set("${mod_id}_fabric.refmap.json")
+    }
+
+    runs {
+        client {
+            client()
+            setConfigName("Fabric Client")
+            ideConfigGenerated(true)
+            runDir("run")
+        }
+        server {
+            server()
+            setConfigName("Fabric Server")
+            ideConfigGenerated(true)
+            runDir("run")
+        }
+    }
+}
+
+version = rootProject.version
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+    withSourcesJar()
+}
+
+processResources {
+    inputs.property "version", project.version
+
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${mod_name}" }
+    }
+    // Add Implementation-Version to manifest for dynamic version command
+    manifest {
+        attributes(
+            'Implementation-Version': project.version
+        )
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            groupId project.group
+            artifactId project.name
+            version project.version
+            from components.java
+        }
+    }
+
+    repositories {
+        maven {
+            url "file://" + System.getenv("local_maven")
+        }
+    }
+}
+
+archivesBaseName = 'minetracer-fabric-1.21.1'
+
+
