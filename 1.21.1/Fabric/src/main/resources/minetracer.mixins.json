@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "package": "com.minetracer.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "MixinScreenHandler",
+    "MixinServerPlayerInteractionManager",
+    "MixinSignBlockEntity",
+    "MixinItemEntity",
+    "MixinPlayerEntityDrop",
+    "ServerPlayerInteractionManagerAccessor",
+    "MixinInspectorLeftClick"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

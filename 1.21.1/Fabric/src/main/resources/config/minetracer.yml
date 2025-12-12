@@ -1,0 +1,104 @@
+# MineTracer Configuration File
+# https://github.com/HelluPeptic/mine-tracer
+
+# Database Configuration
+database:
+  # Maximum database connection pool size
+  max-pool-size: 10
+  
+  # Enable SQLite WAL (Write-Ahead Logging) mode for better concurrency
+  enable-wal: true
+  
+  # Cache size in pages (negative = KB, positive = pages)
+  cache-size: 10000
+  
+  # Synchronous mode: OFF, NORMAL, FULL
+  synchronous: NORMAL
+  
+  # Temp store location: DEFAULT, FILE, MEMORY
+  temp-store: MEMORY
+
+# Logging Configuration
+logging:
+  # Track container transactions (chests, barrels, hoppers, etc.)
+  container-transactions: true
+  
+  # Track block placement and breaking
+  block-changes: true
+  
+  # Track item pickups from ground
+  item-pickups: true
+  
+  # Track item drops
+  item-drops: true
+  
+  # Track entity kills
+  entity-kills: true
+  
+  # Track sign text changes
+  sign-text: true
+  
+  # Track chat messages
+  chat-messages: false
+  
+  # Track player commands
+  player-commands: false
+
+# Inspector Configuration
+inspector:
+  # Cooldown between inspector lookups in milliseconds
+  cooldown-ms: 100
+  
+  # Default number of entries per page
+  default-page-size: 7
+  
+  # Maximum radius for nearby block searches (double chests)
+  max-search-radius: 2
+  
+  # Enable clickable coordinates in chat
+  clickable-coordinates: true
+
+# Performance Configuration
+performance:
+  # Async log queue size before blocking
+  async-queue-size: 5000
+  
+  # Batch insert size (logs accumulated before database write)
+  batch-insert-size: 500
+  
+  # Batch insert interval in milliseconds
+  batch-insert-interval: 100
+  
+  # Enable verbose debug logging
+  verbose: false
+
+# Rollback Configuration
+rollback:
+  # Allow rollback of items in containers
+  rollback-items: true
+  
+  # Allow rollback of entities (mobs, items)
+  rollback-entities: false
+  
+  # Maximum rollback radius
+  max-radius: 100
+  
+  # Default rollback radius
+  default-radius: 10
+  
+  # Enable rollback preview mode
+  enable-preview: true
+
+# Feature Flags
+features:
+  # Enable user caching for performance
+  user-caching: true
+  
+  # Cache size for user lookups
+  user-cache-size: 1000
+  
+  # Enable hopper transaction tracking
+  hopper-transactions: true
+  
+  # Check for mod updates on startup
+  check-updates: true
