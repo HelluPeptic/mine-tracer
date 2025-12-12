@@ -99,15 +99,18 @@ processResources {
 }
 
 jar {
-    from("LICENSE") {
+    from("../LICENSE") {
         rename { "${it}_${mod_name}" }
     }
-    // Add Implementation-Version to manifest for dynamic version command
     manifest {
         attributes(
             'Implementation-Version': project.version
         )
     }
+}
+
+remapJar {
+    addNestedDependencies = true
 }
 
 publishing {
@@ -127,6 +130,6 @@ publishing {
     }
 }
 
-archivesBaseName = 'minetracer-fabric-1.21.1'
+archivesBaseName = 'minetracer'
 
 
