@@ -244,7 +244,7 @@ public class RollbackManager {
                 return true;
             } else if ("broke".equals(entry.action)) {
                 // Restore the block that was broken
-                Block block = Registries.BLOCK.get(new Identifier(entry.blockId));
+                Block block = Registries.BLOCK.get(Identifier.of(entry.blockId));
                 if (block != null) {
                     BlockState state = block.getDefaultState();
                     

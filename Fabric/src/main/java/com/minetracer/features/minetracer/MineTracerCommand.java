@@ -520,7 +520,7 @@ public class MineTracerCommand {
         } else if (entry instanceof MineTracerLookup.BlockLogEntry) {
             MineTracerLookup.BlockLogEntry be = (MineTracerLookup.BlockLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(be.timestamp, Instant.now()).getSeconds());
-            net.minecraft.block.Block block = Registries.BLOCK.get(new Identifier(be.blockId));
+            net.minecraft.block.Block block = Registries.BLOCK.get(Identifier.of(be.blockId));
             String blockName = block.getName().getString();
             boolean isRolledBack = be.rolledBack;
             Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
@@ -1318,7 +1318,7 @@ public class MineTracerCommand {
         ItemStack remaining = stackToRemove.copy();
         for (int i = 0; i < inventory.size() && !remaining.isEmpty(); i++) {
             ItemStack existingStack = inventory.getStack(i);
-            if (!existingStack.isEmpty() && ItemStack.canCombine(existingStack, remaining)) {
+            if (!existingStack.isEmpty() && ItemStack.areItemsAndComponentsEqual(existingStack, remaining)) {
                 int canRemove = Math.min(existingStack.getCount(), remaining.getCount());
                 if (canRemove > 0) {
                     existingStack.decrement(canRemove);
@@ -1337,7 +1337,7 @@ public class MineTracerCommand {
         ItemStack remaining = stack.copy();
         for (int i = 0; i < inventory.size() && !remaining.isEmpty(); i++) {
             ItemStack existingStack = inventory.getStack(i);
-            if (!existingStack.isEmpty() && ItemStack.canCombine(existingStack, remaining)) {
+            if (!existingStack.isEmpty() && ItemStack.areItemsAndComponentsEqual(existingStack, remaining)) {
                 int maxStackSize = existingStack.getMaxCount();
                 int canAdd = maxStackSize - existingStack.getCount();
                 if (canAdd > 0) {
@@ -1378,7 +1378,7 @@ public class MineTracerCommand {
         try {
             BlockPos pos = entry.pos;
             net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK
-                    .get(new net.minecraft.util.Identifier(entry.blockId));
+                    .get(net.minecraft.util.Identifier.of(entry.blockId));
             if (block != null && block != net.minecraft.block.Blocks.AIR) {
                 net.minecraft.block.BlockState blockState = block.getDefaultState();
                 if (entry.nbt != null && !entry.nbt.isEmpty() && !entry.nbt.equals("{}")) {
@@ -1408,7 +1408,7 @@ public class MineTracerCommand {
                             net.minecraft.nbt.NbtCompound blockEntityData = nbtCompound.getCompound("BlockEntityTag");
                             net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
                             if (blockEntity != null) {
-                                blockEntity.readNbt(blockEntityData);
+                                blockEntity.read(blockEntityData, world.getRegistryManager());
                                 blockEntity.markDirty();
                             }
                         }
@@ -1458,17 +1458,17 @@ public class MineTracerCommand {
                             }
                         }
                         try {
-                            net.minecraft.nbt.NbtCompound signNbt = signEntity.createNbt();
+                            net.minecraft.nbt.NbtCompound signNbt = signEntity.createNbt(world.getRegistryManager());
                             if (signNbt.contains("front_text")) {
                                 net.minecraft.nbt.NbtCompound frontText = signNbt.getCompound("front_text");
                                 net.minecraft.nbt.NbtList messages = new net.minecraft.nbt.NbtList();
                                 for (net.minecraft.text.Text text : beforeTexts) {
-                                    String jsonText = net.minecraft.text.Text.Serializer.toJson(text);
+                                    String jsonText = net.minecraft.text.Text.Serialization.toJsonString(text, world.getRegistryManager());
                                     messages.add(net.minecraft.nbt.NbtString.of(jsonText));
                                 }
                                 frontText.put("messages", messages);
                                 signNbt.put("front_text", frontText);
-                                signEntity.readNbt(signNbt);
+                                signEntity.read(signNbt, world.getRegistryManager());
                             }
                         } catch (Exception nbtError) {
                             return false;
@@ -1516,7 +1516,7 @@ public class MineTracerCommand {
         try {
             BlockPos pos = entry.pos;
             String blockId = entry.blockId;
-            net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK.get(new Identifier(blockId));
+            net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK.get(Identifier.of(blockId));
             if (block != null) {
                 net.minecraft.block.BlockState newState = block.getDefaultState();
                 world.setBlockState(pos, newState, 3);
@@ -1527,7 +1527,7 @@ public class MineTracerCommand {
                         net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader.parse(entry.nbt);
                         net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
                         if (blockEntity != null) {
-                            blockEntity.readNbt(nbt);
+                            blockEntity.read(nbt, world.getRegistryManager());
                             blockEntity.markDirty();
                         }
                     } catch (Exception nbtError) {
@@ -1770,7 +1770,7 @@ public class MineTracerCommand {
     private static void sendGhostBlock(ServerPlayerEntity player, BlockPos pos, String blockId, String nbtString) {
         try {
             // Parse the block ID and get the block state
-            Identifier identifier = new Identifier(blockId);
+            Identifier identifier = Identifier.of(blockId);
             Block block = Registries.BLOCK.get(identifier);
             BlockState state = block.getDefaultState();
             

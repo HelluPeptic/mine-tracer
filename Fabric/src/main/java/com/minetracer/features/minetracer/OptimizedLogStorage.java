@@ -417,7 +417,7 @@ public class OptimizedLogStorage {
                             try {
                                 net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader
                                         .parse((String) obj.get("itemNbt"));
-                                ItemStack stack = ItemStack.fromNbt(nbt);
+                                ItemStack stack = ItemStack.fromNbtOrEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager(), nbt);
                                 LogEntry entry = new LogEntry((String) obj.get("action"),
                                         (String) obj.get("playerName"), pos, stack,
                                         java.time.Instant.parse((String) obj.get("timestamp")));
@@ -480,7 +480,7 @@ public class OptimizedLogStorage {
                                         Integer.parseInt(posParts[2]));
                                 net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader
                                         .parse((String) obj.get("itemNbt"));
-                                ItemStack stack = ItemStack.fromNbt(nbt);
+                                ItemStack stack = ItemStack.fromNbtOrEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager(), nbt);
                                 ItemPickupDropLogEntry entry = new ItemPickupDropLogEntry((String) obj.get("action"),
                                         (String) obj.get("playerName"), pos, stack, (String) obj.get("world"),
                                         java.time.Instant.parse((String) obj.get("timestamp")));
@@ -1096,7 +1096,7 @@ public class OptimizedLogStorage {
             this.playerName = entry.playerName;
             this.pos = entry.pos.getX() + "," + entry.pos.getY() + "," + entry.pos.getZ();
             try {
-                this.itemNbt = entry.stack.writeNbt(new NbtCompound()).toString();
+                this.itemNbt = entry.stack.encodeAllowEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager()).toString();
             } catch (Exception e) {
                 this.itemNbt = "{}";
             }
@@ -1162,7 +1162,7 @@ public class OptimizedLogStorage {
             this.playerName = entry.playerName;
             this.pos = entry.pos.getX() + "," + entry.pos.getY() + "," + entry.pos.getZ();
             try {
-                this.itemNbt = entry.stack.writeNbt(new net.minecraft.nbt.NbtCompound()).toString();
+                this.itemNbt = entry.stack.encodeAllowEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager()).toString();
             } catch (Exception e) {
                 this.itemNbt = "{}";
             }

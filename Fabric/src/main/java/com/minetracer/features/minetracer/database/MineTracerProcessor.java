@@ -360,8 +360,7 @@ public class MineTracerProcessor {
      */
     private byte[] serializeItemStack(ItemStack stack) {
         try {
-            NbtCompound nbt = new NbtCompound();
-            stack.writeNbt(nbt);
+            NbtCompound nbt = (NbtCompound) stack.encodeAllowEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
             return nbt.toString().getBytes("UTF-8");
         } catch (Exception e) {
             System.err.println("[MineTracer] Failed to serialize ItemStack: " + e.getMessage());

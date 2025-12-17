@@ -66,7 +66,7 @@ public class MixinServerPlayerInteractionManager {
                         fullNbt.put("Properties", propertiesNbt);
                     }
                     if (blockEntity != null) {
-                        fullNbt.put("BlockEntityTag", blockEntity.createNbt());
+                        fullNbt.put("BlockEntityTag", blockEntity.createNbt(world.getRegistryManager()));
                     }
                     nbt = fullNbt.toString();
                 }
@@ -81,7 +81,7 @@ public class MixinServerPlayerInteractionManager {
                         }
                     }
                     String beforeText = GSON.toJson(lines);
-                    OptimizedLogStorage.logSignAction("placed", player, placedPos, beforeText, sign.createNbt().toString());
+                    OptimizedLogStorage.logSignAction("placed", player, placedPos, beforeText, sign.createNbt(world.getRegistryManager()).toString());
                 } else {
                     OptimizedLogStorage.logBlockAction("placed", player, placedPos, blockId.toString(), nbt);
                 }
@@ -117,6 +117,7 @@ public class MixinServerPlayerInteractionManager {
         }
         CompletableFuture.runAsync(() -> {
             try {
+                net.minecraft.world.World world = player.getWorld();
                 Identifier blockId = Registries.BLOCK.getId(state.getBlock());
                 String nbt = null;
                 if (!state.getProperties().isEmpty() || blockEntity != null) {
@@ -131,7 +132,7 @@ public class MixinServerPlayerInteractionManager {
                         fullNbt.put("Properties", propertiesNbt);
                     }
                     if (blockEntity != null) {
-                        fullNbt.put("BlockEntityTag", blockEntity.createNbt());
+                        fullNbt.put("BlockEntityTag", blockEntity.createNbt(world.getRegistryManager()));
                     }
                     nbt = fullNbt.toString();
                 }
@@ -146,7 +147,7 @@ public class MixinServerPlayerInteractionManager {
                         }
                     }
                     String beforeText = GSON.toJson(lines);
-                    OptimizedLogStorage.logSignAction("broke", player, pos, beforeText, sign.createNbt().toString());
+                    OptimizedLogStorage.logSignAction("broke", player, pos, beforeText, sign.createNbt(world.getRegistryManager()).toString());
                 } else {
                     OptimizedLogStorage.logBlockAction("broke", player, pos, blockId.toString(), nbt);
                 }

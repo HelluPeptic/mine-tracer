@@ -392,7 +392,7 @@ public class MineTracerLookup {
                 // Try to parse NBT data
                 String nbtString = new String(data, "UTF-8");
                 NbtCompound nbt = StringNbtReader.parse(nbtString);
-                return ItemStack.fromNbt(nbt);
+                return ItemStack.fromNbtOrEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager(), nbt);
             } else {
                 // Fallback: create from type ID and amount
                 return new ItemStack(Registries.ITEM.get(typeId), amount);

@@ -258,6 +258,7 @@ public class NewOptimizedLogStorage {
      */
     public static void registerServerLifecycle() {
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+            com.minetracer.features.minetracer.util.ServerRegistry.setServer(server);
             if (!initialize()) {
                 System.err.println("[MineTracer] CRITICAL: Failed to initialize storage system!");
             }

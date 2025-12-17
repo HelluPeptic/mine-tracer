@@ -275,13 +275,14 @@ public class MixinScreenHandler {
         if (stack.isEmpty())
             return "air";
         String itemId = Registries.ITEM.getId(stack.getItem()).toString();
-        return stack.hasNbt() ? itemId + stack.getNbt().toString() : itemId;
+        // In 1.21+, use component string representation instead of NBT
+        return itemId + stack.getComponents().toString();
     }
     private ItemStack minetracer$createItemStackFromKey(String key) {
         if (key.equals("air"))
             return ItemStack.EMPTY;
         String itemId = key.contains("{") ? key.substring(0, key.indexOf("{")) : key;
-        Item item = Registries.ITEM.get(new Identifier(itemId));
+        Item item = Registries.ITEM.get(Identifier.of(itemId));
         return new ItemStack(item, 1);
     }
 }

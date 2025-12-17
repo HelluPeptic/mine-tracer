@@ -120,7 +120,7 @@ public class MigrationUtility {
                     
                     // Parse ItemStack from NBT
                     NbtCompound nbt = StringNbtReader.parse((String) obj.get("itemNbt"));
-                    ItemStack stack = ItemStack.fromNbt(nbt);
+                    ItemStack stack = ItemStack.fromNbtOrEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager(), nbt);
                     
                     // Get user and world IDs (create if needed)
                     String playerName = (String) obj.get("playerName");
