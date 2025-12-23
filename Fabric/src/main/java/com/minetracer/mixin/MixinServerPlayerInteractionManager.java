@@ -92,7 +92,7 @@ public class MixinServerPlayerInteractionManager {
     @Inject(method = "tryBreakBlock", at = @At("HEAD"))
     private void minetracer$cacheBlockBreakState(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
         ServerPlayerEntity player = ((ServerPlayerInteractionManagerAccessor) this).getPlayer();
-        net.minecraft.world.World world = player.getWorld();
+        net.minecraft.world.World world = ((com.minetracer.mixin.EntityAccessor)player).getWorld();
         this.minetracer$prevBrokenState = world.getBlockState(pos);
         this.minetracer$prevBrokenBlockEntity = world.getBlockEntity(pos);
     }
@@ -117,7 +117,7 @@ public class MixinServerPlayerInteractionManager {
         }
         CompletableFuture.runAsync(() -> {
             try {
-                net.minecraft.world.World world = player.getWorld();
+                net.minecraft.world.World world = ((com.minetracer.mixin.EntityAccessor)player).getWorld();
                 Identifier blockId = Registries.BLOCK.getId(state.getBlock());
                 String nbt = null;
                 if (!state.getProperties().isEmpty() || blockEntity != null) {

@@ -1,4 +1,5 @@
 package com.minetracer.features.minetracer.database;
+import com.minetracer.features.minetracer.util.NbtCompatHelper;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -222,8 +223,55 @@ public class MineTracerLookup {
         }, queryExecutor);
     }
     
-    /**
-     * Get block logs in range (async)
+    /**     * Get sign logs for specific user with world filter (async)
+     */
+    public static CompletableFuture<List<SignLogEntry>> getSignLogsForUserAsync(String userName, String worldName) {
+        return CompletableFuture.supplyAsync(() -> {
+            List<SignLogEntry> results = new ArrayList<>();
+            
+            try (Connection connection = MineTracerDatabase.getConnection()) {
+                if (connection == null) {
+                    return results;
+                }
+                
+                String query = "SELECT s.time, u.user, s.x, s.y, s.z, s.action, s.text, s.nbt, s.rolled_back " +
+                              "FROM minetracer_sign s " +
+                              "JOIN minetracer_user u ON s.user = u.id " +
+                              "JOIN minetracer_world w ON s.wid = w.id " +
+                              "WHERE u.user = ? AND w.world = ? " +
+                              "ORDER BY s.time DESC LIMIT 1000";
+                
+                PreparedStatement statement = connection.prepareStatement(query);
+                statement.setString(1, userName);
+                statement.setString(2, worldName);
+                
+                ResultSet rs = statement.executeQuery();
+                while (rs.next()) {
+                    long time = rs.getLong("time");
+                    String user = rs.getString("user");
+                    int x = rs.getInt("x");
+                    int y = rs.getInt("y");
+                    int z = rs.getInt("z");
+                    String action = rs.getString("action");
+                    String text = rs.getString("text");
+                    String nbt = rs.getString("nbt");
+                    boolean rolledBack = rs.getInt("rolled_back") > 0;
+                    
+                    BlockPos pos = new BlockPos(x, y, z);
+                    results.add(new SignLogEntry(action, user, pos, text, nbt, 
+                                               Instant.ofEpochSecond(time), rolledBack));
+                }
+                
+            } catch (SQLException e) {
+                System.err.println("[MineTracer] Error getting sign logs for user: " + e.getMessage());
+                e.printStackTrace();
+            }
+            
+            return results;
+        }, queryExecutor);
+    }
+    
+    /**     * Get block logs in range (async)
      */
     public static CompletableFuture<List<BlockLogEntry>> getBlockLogsInRangeAsync(
             BlockPos center, int range, String userFilter, String worldName) {
@@ -391,8 +439,8 @@ public class MineTracerLookup {
             if (data != null && data.length > 0) {
                 // Try to parse NBT data
                 String nbtString = new String(data, "UTF-8");
-                NbtCompound nbt = StringNbtReader.parse(nbtString);
-                return ItemStack.fromNbtOrEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager(), nbt);
+                NbtCompound nbt = NbtCompatHelper.parseNbtString(nbtString);
+                return NbtCompatHelper.itemStackFromNbt(nbt, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
             } else {
                 // Fallback: create from type ID and amount
                 return new ItemStack(Registries.ITEM.get(typeId), amount);
@@ -632,7 +680,9 @@ public class MineTracerLookup {
             List<SignLogEntry> results = new ArrayList<>();
             
             try (Connection connection = MineTracerDatabase.getConnection()) {
-                if (connection == null) return results;
+                if (connection == null) {
+                    return results;
+                }
                 
                 StringBuilder query = new StringBuilder(
                     "SELECT s.time, u.user, s.x, s.y, s.z, s.action, s.text, s.nbt, s.rolled_back " +

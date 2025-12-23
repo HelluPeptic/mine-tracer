@@ -36,5 +36,5 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'MineTracer-1.20.1'
+rootProject.name = 'MineTracer-1.21.11'
 include("Fabric")

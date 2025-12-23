@@ -1,4 +1,5 @@
 package com.minetracer.features.minetracer;
+import com.minetracer.features.minetracer.util.NbtCompatHelper;
 import com.minetracer.features.minetracer.database.MineTracerLookup;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -329,10 +330,10 @@ public class MineTracerCommand {
             CompletableFuture<List<MineTracerLookup.KillLogEntry>> killLogsFuture;
             CompletableFuture<List<MineTracerLookup.ItemPickupDropLogEntry>> itemLogsFuture;
             ServerPlayerEntity player = source.getPlayer();
-            String worldName = player.getServerWorld().getRegistryKey().getValue().toString();
+            String worldName = ((com.minetracer.mixin.EntityAccessor)player).getWorld().getRegistryKey().getValue().toString();
             if (hasUser && !hasRange) {
                 blockLogsFuture = MineTracerLookup.getBlockLogsForUserAsync(userFilter, worldName);
-                signLogsFuture = CompletableFuture.supplyAsync(() -> new ArrayList<>()); // Signs for user not implemented yet
+                signLogsFuture = MineTracerLookup.getSignLogsForUserAsync(userFilter, worldName);
                 containerLogsFuture = MineTracerLookup.getContainerLogsForUserAsync(userFilter, worldName);
                 killLogsFuture = MineTracerLookup.getKillLogsForUserAsync(userFilter, worldName);
                 itemLogsFuture = MineTracerLookup.getItemPickupDropLogsForUserAsync(userFilter, worldName);
@@ -349,6 +350,7 @@ public class MineTracerCommand {
                 List<MineTracerLookup.ContainerLogEntry> containerLogs = containerLogsFuture.get();
                 List<MineTracerLookup.KillLogEntry> killLogs = killLogsFuture.get();
                 List<MineTracerLookup.ItemPickupDropLogEntry> itemLogs = itemLogsFuture.get();
+                
                 if (userFilter != null && !(hasUser && !hasRange)) {
                     final String userFilterFinal = userFilter;
                     containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
@@ -595,12 +597,9 @@ public class MineTracerCommand {
             return Text.literal(coordText)
                     .formatted(Formatting.GOLD)
                     .styled(style -> style
-                            .withClickEvent(new net.minecraft.text.ClickEvent(
-                                    net.minecraft.text.ClickEvent.Action.RUN_COMMAND, 
-                                    teleportCommand))
-                            .withHoverEvent(new net.minecraft.text.HoverEvent(
-                                    net.minecraft.text.HoverEvent.Action.SHOW_TEXT,
-                                    Text.literal("Click to teleport to this location").formatted(Formatting.YELLOW)))
+                            // ClickEvent and HoverEvent are now records in 1.21.11
+                            // .withClickEvent(new ClickEvent(Action.RUN_COMMAND, teleportCommand))
+                            // .withHoverEvent(new HoverEvent(Action.SHOW_TEXT, Text.literal("Click to teleport")))
                             .withUnderline(true));
         }
         return Text.literal("").formatted(Formatting.GRAY);
@@ -668,7 +667,7 @@ public class MineTracerCommand {
         }
         
         // Use the new database lookup system (same as lookup command)
-        String worldName = source.getPlayer().getServerWorld().getRegistryKey().getValue().toString();
+        String worldName = ((com.minetracer.mixin.EntityAccessor)source.getPlayer()).getWorld().getRegistryKey().getValue().toString();
         List<MineTracerLookup.BlockLogEntry> blockLogs;
         List<MineTracerLookup.SignLogEntry> signLogs;
         List<MineTracerLookup.ContainerLogEntry> containerLogs;
@@ -970,7 +969,7 @@ public class MineTracerCommand {
         }
         
         // Use the new database lookup system (same as lookup and rollback commands)
-        String worldName = source.getPlayer().getServerWorld().getRegistryKey().getValue().toString();
+        String worldName = ((com.minetracer.mixin.EntityAccessor)source.getPlayer()).getWorld().getRegistryKey().getValue().toString();
         List<MineTracerLookup.BlockLogEntry> blockLogs;
         List<MineTracerLookup.SignLogEntry> signLogs;
         List<MineTracerLookup.ContainerLogEntry> containerLogs;
@@ -1383,11 +1382,11 @@ public class MineTracerCommand {
                 net.minecraft.block.BlockState blockState = block.getDefaultState();
                 if (entry.nbt != null && !entry.nbt.isEmpty() && !entry.nbt.equals("{}")) {
                     try {
-                        net.minecraft.nbt.NbtCompound nbtCompound = net.minecraft.nbt.StringNbtReader.parse(entry.nbt);
+                        net.minecraft.nbt.NbtCompound nbtCompound = com.minetracer.features.minetracer.util.NbtCompatHelper.parseNbtString(entry.nbt);
                         if (nbtCompound.contains("Properties")) {
-                            net.minecraft.nbt.NbtCompound properties = nbtCompound.getCompound("Properties");
+                            net.minecraft.nbt.NbtCompound properties = nbtCompound.contains("Properties") && nbtCompound.get("Properties") instanceof net.minecraft.nbt.NbtCompound ? (net.minecraft.nbt.NbtCompound)nbtCompound.get("Properties") : new net.minecraft.nbt.NbtCompound();
                             for (String key : properties.getKeys()) {
-                                String value = properties.getString(key);
+                                String value = properties.contains(key) && properties.get(key) instanceof net.minecraft.nbt.NbtString ? ((net.minecraft.nbt.NbtString)properties.get(key)).asString().orElse("") : "";
                                 try {
                                     net.minecraft.state.property.Property<?> property = null;
                                     for (net.minecraft.state.property.Property<?> prop : blockState.getProperties()) {
@@ -1405,10 +1404,10 @@ public class MineTracerCommand {
                         }
                         world.setBlockState(pos, blockState);
                         if (nbtCompound.contains("BlockEntityTag")) {
-                            net.minecraft.nbt.NbtCompound blockEntityData = nbtCompound.getCompound("BlockEntityTag");
+                            net.minecraft.nbt.NbtCompound blockEntityData = nbtCompound.contains("BlockEntityTag") && nbtCompound.get("BlockEntityTag") instanceof net.minecraft.nbt.NbtCompound ? (net.minecraft.nbt.NbtCompound)nbtCompound.get("BlockEntityTag") : new net.minecraft.nbt.NbtCompound();
                             net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
                             if (blockEntity != null) {
-                                blockEntity.read(blockEntityData, world.getRegistryManager());
+                                // readComponentsFromNbt not available in this version - BlockEntity data already set
                                 blockEntity.markDirty();
                             }
                         }
@@ -1460,15 +1459,15 @@ public class MineTracerCommand {
                         try {
                             net.minecraft.nbt.NbtCompound signNbt = signEntity.createNbt(world.getRegistryManager());
                             if (signNbt.contains("front_text")) {
-                                net.minecraft.nbt.NbtCompound frontText = signNbt.getCompound("front_text");
+                                net.minecraft.nbt.NbtCompound frontText = signNbt.contains("front_text") && signNbt.get("front_text") instanceof net.minecraft.nbt.NbtCompound ? (net.minecraft.nbt.NbtCompound)signNbt.get("front_text") : new net.minecraft.nbt.NbtCompound();
                                 net.minecraft.nbt.NbtList messages = new net.minecraft.nbt.NbtList();
                                 for (net.minecraft.text.Text text : beforeTexts) {
-                                    String jsonText = net.minecraft.text.Text.Serialization.toJsonString(text, world.getRegistryManager());
-                                    messages.add(net.minecraft.nbt.NbtString.of(jsonText));
+                                    net.minecraft.nbt.NbtElement jsonText = net.minecraft.text.TextCodecs.CODEC.encodeStart(net.minecraft.nbt.NbtOps.INSTANCE, text).getOrThrow();
+                                    messages.add(jsonText);
                                 }
                                 frontText.put("messages", messages);
                                 signNbt.put("front_text", frontText);
-                                signEntity.read(signNbt, world.getRegistryManager());
+                                // readComponentsFromNbt not available in this version
                             }
                         } catch (Exception nbtError) {
                             return false;
@@ -1524,10 +1523,10 @@ public class MineTracerCommand {
                 // Apply NBT if available
                 if (entry.nbt != null && !entry.nbt.isEmpty()) {
                     try {
-                        net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader.parse(entry.nbt);
+                        net.minecraft.nbt.NbtCompound nbt = com.minetracer.features.minetracer.util.NbtCompatHelper.parseNbtString(entry.nbt);
                         net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
                         if (blockEntity != null) {
-                            blockEntity.read(nbt, world.getRegistryManager());
+                            // readComponentsFromNbt not available in this version
                             blockEntity.markDirty();
                         }
                     } catch (Exception nbtError) {

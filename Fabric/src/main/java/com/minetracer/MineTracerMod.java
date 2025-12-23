@@ -20,7 +20,6 @@ public class MineTracerMod implements ModInitializer {
         
         // Register event listeners
         MineTracer.register();
-        KillEventListener.register();
         
         // Initialize new database-based storage system
         NewOptimizedLogStorage.registerServerLifecycle();

@@ -24,7 +24,7 @@ public class ContainerInspector extends BaseInspector {
                 checkPreconditions(player);
                 startInspection(player);
                 
-                String worldName = player.getServerWorld().getRegistryKey().getValue().toString();
+                String worldName = ((com.minetracer.mixin.EntityAccessor)player).getWorld().getRegistryKey().getValue().toString();
                 
                 // Get recent container logs at this position (limit to recent activity)
                 CompletableFuture<List<MineTracerLookup.ContainerLogEntry>> containerLogsFuture = 

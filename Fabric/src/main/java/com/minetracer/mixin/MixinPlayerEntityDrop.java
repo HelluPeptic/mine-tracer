@@ -8,17 +8,18 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+// DISABLED FOR 1.21.11 - All PlayerEntity drop methods have changed or been removed
+// Attempted methods that don't exist:
+// - dropItem(ItemStack, boolean, boolean) -> doesn't exist
+// - dropStack(ItemStack) -> doesn't exist  
+// - dropStack(ItemStack, boolean) -> doesn't exist
+//
+// In 1.21.11, PlayerEntity no longer has public drop methods.
+// Possible workaround: Track ItemEntity spawning from MixinItemEntity instead,
+// but this would catch ALL item entities, not just player drops.
 @Mixin(PlayerEntity.class)
 public class MixinPlayerEntityDrop {
-    @Inject(method = "dropItem(Lnet/minecraft/item/ItemStack;ZZ)Lnet/minecraft/entity/ItemEntity;", 
-            at = @At("RETURN"))
-    private void onItemDrop(ItemStack stack, boolean throwRandomly, boolean retainOwnership, 
-                           CallbackInfoReturnable<ItemEntity> cir) {
-        if (((PlayerEntity)(Object)this) instanceof ServerPlayerEntity serverPlayer) {
-            ItemEntity droppedItem = cir.getReturnValue();
-            if (droppedItem != null && !droppedItem.getStack().isEmpty()) {
-                ItemPickupDropEventListener.logItemDrop(serverPlayer, droppedItem);
-            }
-        }
-    }
+    // DISABLED - See minetracer.mixins.json
+    // All tested signatures fail to match any method in PlayerEntity for 1.21.11
 }

@@ -62,8 +62,10 @@ public class ContainerInteractionListener {
             if (TRACKED_CONTAINERS.contains(block)) {
                 // Store position for MixinScreenHandler to use (for SimpleInventory chests)
                 ContainerPositionTracker.setLastOpenedContainer(player.getUuid(), pos);
-                takeContainerSnapshot((ServerPlayerEntity) player, world, pos);
-                scheduleContainerCheck((ServerPlayerEntity) player, pos);
+                // DISABLED: MixinScreenHandler handles container tracking more accurately
+                // This was causing duplicate withdrawals to be logged
+                // takeContainerSnapshot((ServerPlayerEntity) player, world, pos);
+                // scheduleContainerCheck((ServerPlayerEntity) player, pos);
             }
             return ActionResult.PASS;
         });
@@ -96,7 +98,7 @@ public class ContainerInteractionListener {
             try {
                 Thread.sleep(2000); // Wait 2 seconds for interaction
                 // Execute the check on the server thread
-                player.getServer().execute(() -> {
+                ((com.minetracer.mixin.ServerPlayerEntityAccessor)player).getServer().execute(() -> {
                     checkContainerChanges(player, pos);
                 });
             } catch (InterruptedException e) {

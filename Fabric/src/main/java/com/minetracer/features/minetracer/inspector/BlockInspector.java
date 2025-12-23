@@ -23,7 +23,7 @@ public class BlockInspector extends BaseInspector {
                 checkPreconditions(player);
                 startInspection(player);
                 
-                String worldName = player.getServerWorld().getRegistryKey().getValue().toString();
+                String worldName = ((com.minetracer.mixin.EntityAccessor)player).getWorld().getRegistryKey().getValue().toString();
                 
                 // Get recent block logs at this position (limit to recent activity)
                 CompletableFuture<List<MineTracerLookup.BlockLogEntry>> blockLogsFuture = 
@@ -76,7 +76,7 @@ public class BlockInspector extends BaseInspector {
                 checkPreconditions(player);
                 startInspection(player);
                 
-                String worldName = player.getServerWorld().getRegistryKey().getValue().toString();
+                String worldName = ((com.minetracer.mixin.EntityAccessor)player).getWorld().getRegistryKey().getValue().toString();
                 
                 // Get recent block logs at this position
                 CompletableFuture<List<MineTracerLookup.BlockLogEntry>> blockLogsFuture = 

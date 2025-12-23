@@ -62,7 +62,7 @@ public class RollbackManager {
             "user:" + username + " time:" + timeSeconds + "s radius:" + radius);
         
         try {
-            ServerWorld world = player.getServerWorld();
+            ServerWorld world = (ServerWorld)((com.minetracer.mixin.EntityAccessor)player).getWorld();
             String worldName = world.getRegistryKey().getValue().toString();
             
             // Get all relevant logs
@@ -120,7 +120,7 @@ public class RollbackManager {
         }
         
         try {
-            String worldName = player.getServerWorld().getRegistryKey().getValue().toString();
+            String worldName = ((com.minetracer.mixin.EntityAccessor)player).getWorld().getRegistryKey().getValue().toString();
             
             List<MineTracerLookup.BlockLogEntry> blockLogs = getBlockLogsForRollback(
                 username, worldName, center, radius, timeSeconds, actions, includeFilter);

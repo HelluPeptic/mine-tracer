@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.7.3'
+    id 'fabric-loom' version '1.13-SNAPSHOT'
     id 'maven-publish'
     id 'idea'
 }
@@ -16,15 +16,10 @@ repositories {
 }
 
 dependencies {
-    minecraft "com.mojang:minecraft:1.21.1"
-    mappings "net.fabricmc:yarn:1.21.1+build.3:v2"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:0.110.0+1.21.1"
-    modImplementation "net.fabricmc:fabric-loader:0.15.11"
-
-    // Add Sponge Mixin for annotation processing and compile
-    implementation "org.spongepowered:mixin:0.8.5"
-    annotationProcessor "org.spongepowered:mixin:0.8.5"
-    compileOnly "org.spongepowered:mixin:0.8.5"
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     implementation "org.jetbrains:annotations:23.0.0"
     implementation group: 'com.google.code.findbugs', name: 'jsr305', version: '3.0.1'
@@ -35,9 +30,9 @@ dependencies {
     annotationProcessor 'com.google.guava:guava:32.1.2-jre'
     compileOnly 'com.google.guava:guava:32.1.2-jre'
 
-    // FastUtil for high-performance collections
-    implementation 'it.unimi.dsi:fastutil:8.5.12'
-    include 'it.unimi.dsi:fastutil:8.5.12'
+    // FastUtil for high-performance collections - Minecraft 1.21.11 requires 8.5.13+
+    implementation 'it.unimi.dsi:fastutil:8.5.13'
+    include 'it.unimi.dsi:fastutil:8.5.13'
     
     // Caffeine for high-performance caching
     implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
@@ -56,6 +51,7 @@ dependencies {
 loom {
     mixin {
         defaultRefmapName.set("${mod_id}_fabric.refmap.json")
+        useLegacyMixinAp = false
     }
 
     runs {

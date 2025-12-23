@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import com.minetracer.features.minetracer.NewOptimizedLogStorage;
 import java.util.List;
 @Mixin(SignBlockEntity.class)
@@ -17,6 +18,7 @@ public class MixinSignBlockEntity {
     private String minetracer$beforeText = null;
     @Unique
     private boolean minetracer$editLogged = false;
+    
     @Inject(method = "tryChangeText", at = @At("HEAD"))
     private void minetracer$cacheBeforeText(PlayerEntity player, boolean front, List messages, CallbackInfo ci) {
         SignBlockEntity sign = (SignBlockEntity) (Object) this;
@@ -31,11 +33,13 @@ public class MixinSignBlockEntity {
         minetracer$beforeText = beforeSb.toString();
         minetracer$editLogged = false;
     }
+    
     @Inject(method = "tryChangeText", at = @At("TAIL"))
     private void minetracer$logSignEdit(PlayerEntity player, boolean front, List messages, CallbackInfo ci) {
         if (minetracer$editLogged)
             return;
         minetracer$editLogged = true;
+        
         SignBlockEntity sign = (SignBlockEntity) (Object) this;
         BlockPos pos = sign.getPos();
         if (sign.getWorld() instanceof ServerWorld) {

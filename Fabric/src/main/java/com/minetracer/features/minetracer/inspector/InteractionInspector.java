@@ -23,7 +23,7 @@ public class InteractionInspector extends BaseInspector {
                 checkPreconditions(player);
                 startInspection(player);
                 
-                String worldName = player.getServerWorld().getRegistryKey().getValue().toString();
+                String worldName = ((com.minetracer.mixin.EntityAccessor)player).getWorld().getRegistryKey().getValue().toString();
                 
                 // Get recent block logs at this position (shows who placed/broke what)
                 CompletableFuture<List<MineTracerLookup.BlockLogEntry>> blockLogsFuture = 

@@ -1,4 +1,5 @@
 package com.minetracer.features.minetracer;
+import com.minetracer.features.minetracer.util.NbtCompatHelper;
 import com.minetracer.features.minetracer.NewOptimizedLogStorage;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
@@ -415,9 +416,8 @@ public class OptimizedLogStorage {
                             BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]),
                                     Integer.parseInt(posParts[2]));
                             try {
-                                net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader
-                                        .parse((String) obj.get("itemNbt"));
-                                ItemStack stack = ItemStack.fromNbtOrEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager(), nbt);
+                                net.minecraft.nbt.NbtCompound nbt = NbtCompatHelper.parseNbtString((String) obj.get("itemNbt"));
+                                ItemStack stack = NbtCompatHelper.itemStackFromNbt(nbt, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
                                 LogEntry entry = new LogEntry((String) obj.get("action"),
                                         (String) obj.get("playerName"), pos, stack,
                                         java.time.Instant.parse((String) obj.get("timestamp")));
@@ -478,9 +478,8 @@ public class OptimizedLogStorage {
                                 String[] posParts = ((String) obj.get("pos")).split(",");
                                 BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]),
                                         Integer.parseInt(posParts[2]));
-                                net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader
-                                        .parse((String) obj.get("itemNbt"));
-                                ItemStack stack = ItemStack.fromNbtOrEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager(), nbt);
+                                net.minecraft.nbt.NbtCompound nbt = NbtCompatHelper.parseNbtString((String) obj.get("itemNbt"));
+                                ItemStack stack = NbtCompatHelper.itemStackFromNbt(nbt, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
                                 ItemPickupDropLogEntry entry = new ItemPickupDropLogEntry((String) obj.get("action"),
                                         (String) obj.get("playerName"), pos, stack, (String) obj.get("world"),
                                         java.time.Instant.parse((String) obj.get("timestamp")));
@@ -1096,7 +1095,7 @@ public class OptimizedLogStorage {
             this.playerName = entry.playerName;
             this.pos = entry.pos.getX() + "," + entry.pos.getY() + "," + entry.pos.getZ();
             try {
-                this.itemNbt = entry.stack.encodeAllowEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager()).toString();
+                this.itemNbt = NbtCompatHelper.itemStackToNbt(entry.stack, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager()).toString();
             } catch (Exception e) {
                 this.itemNbt = "{}";
             }
@@ -1162,7 +1161,7 @@ public class OptimizedLogStorage {
             this.playerName = entry.playerName;
             this.pos = entry.pos.getX() + "," + entry.pos.getY() + "," + entry.pos.getZ();
             try {
-                this.itemNbt = entry.stack.encodeAllowEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager()).toString();
+                this.itemNbt = NbtCompatHelper.itemStackToNbt(entry.stack, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager()).toString();
             } catch (Exception e) {
                 this.itemNbt = "{}";
             }

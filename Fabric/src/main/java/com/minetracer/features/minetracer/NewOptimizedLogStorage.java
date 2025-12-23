@@ -72,7 +72,7 @@ public class NewOptimizedLogStorage {
             return;
         }
         
-        String worldName = getWorldName(player.getWorld());
+        String worldName = getWorldName(((com.minetracer.mixin.EntityAccessor)player).getWorld());
         Object[] data = new Object[]{action, player.getName().getString(), pos, stack, worldName};
         
         MineTracerConsumer.queueEntry(MineTracerConsumer.PROCESS_CONTAINER, data, null);
@@ -86,7 +86,7 @@ public class NewOptimizedLogStorage {
             return;
         }
         
-        String worldName = getWorldName(player.getWorld());
+        String worldName = getWorldName(((com.minetracer.mixin.EntityAccessor)player).getWorld());
         Object[] data = new Object[]{action, player.getName().getString(), pos, blockId, nbt, worldName};
         
         MineTracerConsumer.queueEntry(MineTracerConsumer.PROCESS_BLOCK, data, null);
@@ -101,7 +101,7 @@ public class NewOptimizedLogStorage {
         }
         
         String playerName = player != null ? player.getName().getString() : "unknown";
-        String worldName = player != null ? getWorldName(player.getWorld()) : "unknown";
+        String worldName = player != null ? getWorldName(((com.minetracer.mixin.EntityAccessor)player).getWorld()) : "unknown";
         Object[] data = new Object[]{action, playerName, pos, text, nbt, worldName};
         
         MineTracerConsumer.queueEntry(MineTracerConsumer.PROCESS_SIGN, data, null);

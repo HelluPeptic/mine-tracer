@@ -13,7 +13,7 @@ public class ItemPickupDropEventListener {
             return;
         }
         BlockPos pos = itemEntity.getBlockPos();
-        String world = player.getWorld().getRegistryKey().getValue().toString();
+        String world = ((com.minetracer.mixin.EntityAccessor)player).getWorld().getRegistryKey().getValue().toString();
         NewOptimizedLogStorage.logItemPickupDropAction(PICKUP_ACTION, player, pos, originalStack.copy(), world);
     }
     public static void logItemDrop(ServerPlayerEntity player, ItemEntity itemEntity) {
@@ -22,7 +22,7 @@ public class ItemPickupDropEventListener {
         }
         ItemStack stack = itemEntity.getStack();
         BlockPos pos = itemEntity.getBlockPos();
-        String world = player.getWorld().getRegistryKey().getValue().toString();
+        String world = ((com.minetracer.mixin.EntityAccessor)player).getWorld().getRegistryKey().getValue().toString();
         NewOptimizedLogStorage.logItemPickupDropAction(DROP_ACTION, player, pos, stack, world);
     }
 }

@@ -1,4 +1,5 @@
 package com.minetracer.features.minetracer.database;
+import com.minetracer.features.minetracer.util.NbtCompatHelper;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -119,8 +120,8 @@ public class MigrationUtility {
                     BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]), Integer.parseInt(posParts[2]));
                     
                     // Parse ItemStack from NBT
-                    NbtCompound nbt = StringNbtReader.parse((String) obj.get("itemNbt"));
-                    ItemStack stack = ItemStack.fromNbtOrEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager(), nbt);
+                    NbtCompound nbt = NbtCompatHelper.parseNbtString((String) obj.get("itemNbt"));
+                    ItemStack stack = NbtCompatHelper.itemStackFromNbt(nbt, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
                     
                     // Get user and world IDs (create if needed)
                     String playerName = (String) obj.get("playerName");

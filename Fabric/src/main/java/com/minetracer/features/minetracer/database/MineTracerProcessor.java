@@ -1,4 +1,5 @@
 package com.minetracer.features.minetracer.database;
+import com.minetracer.features.minetracer.util.NbtCompatHelper;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -360,7 +361,7 @@ public class MineTracerProcessor {
      */
     private byte[] serializeItemStack(ItemStack stack) {
         try {
-            NbtCompound nbt = (NbtCompound) stack.encodeAllowEmpty(com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
+            NbtCompound nbt = (NbtCompound) NbtCompatHelper.itemStackToNbt(stack, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
             return nbt.toString().getBytes("UTF-8");
         } catch (Exception e) {
             System.err.println("[MineTracer] Failed to serialize ItemStack: " + e.getMessage());
