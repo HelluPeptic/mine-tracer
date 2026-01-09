@@ -30,9 +30,8 @@ dependencies {
     annotationProcessor 'com.google.guava:guava:32.1.2-jre'
     compileOnly 'com.google.guava:guava:32.1.2-jre'
 
-    // FastUtil for high-performance collections - Minecraft 1.21.11 requires 8.5.13+
-    implementation 'it.unimi.dsi:fastutil:8.5.13'
-    include 'it.unimi.dsi:fastutil:8.5.13'
+    // FastUtil for high-performance collections - Use implementation only, let mod loader handle versions
+    implementation 'it.unimi.dsi:fastutil:8.5.15'
     
     // Caffeine for high-performance caching
     implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
