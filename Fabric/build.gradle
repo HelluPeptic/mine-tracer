@@ -108,6 +108,6 @@ publishing {
     }
 }
 
-archivesBaseName = 'minetracer-fabric-1.21.1'
+archivesBaseName = "minetracer-fabric-${minecraft_version}"
 
 
