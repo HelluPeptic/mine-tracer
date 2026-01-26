@@ -1,11 +1,4 @@
 package com.minetracer.features.minetracer;
-import com.minetracer.features.minetracer.util.NbtCompatHelper;
-import com.minetracer.features.minetracer.database.MineTracerLookup;
-import com.mojang.brigadier.Command;
-import com.mojang.brigadier.arguments.StringArgumentType;
-import com.mojang.brigadier.context.CommandContext;
-import com.mojang.brigadier.suggestion.Suggestions;
-import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -13,14 +6,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+
+import com.minetracer.features.minetracer.database.MineTracerLookup;
+import com.mojang.brigadier.Command;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+
 import me.lucko.fabric.api.permissions.v0.Permissions;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.StringNbtReader;
 import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.command.CommandManager;
@@ -1406,9 +1405,68 @@ public class MineTracerCommand {
                         if (nbtCompound.contains("BlockEntityTag")) {
                             net.minecraft.nbt.NbtCompound blockEntityData = nbtCompound.contains("BlockEntityTag") && nbtCompound.get("BlockEntityTag") instanceof net.minecraft.nbt.NbtCompound ? (net.minecraft.nbt.NbtCompound)nbtCompound.get("BlockEntityTag") : new net.minecraft.nbt.NbtCompound();
                             net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
-                            if (blockEntity != null) {
-                                // readComponentsFromNbt not available in this version - BlockEntity data already set
-                                blockEntity.markDirty();
+                            if (blockEntity != null && !blockEntityData.isEmpty()) {
+                                try {
+                                    // Properly restore block entity data (including shulker box contents)
+                                    // Add position data that might be missing
+                                    blockEntityData.putInt("x", pos.getX());
+                                    blockEntityData.putInt("y", pos.getY());
+                                    blockEntityData.putInt("z", pos.getZ());
+                                    
+                                    // Alternative approach: remove and recreate the block entity with the NBT data
+                                    world.removeBlockEntity(pos);
+                                    world.setBlockState(pos, blockState);
+                                    
+                                    // Get the new block entity and try to load data
+                                    net.minecraft.block.entity.BlockEntity newBlockEntity = world.getBlockEntity(pos);
+                                    if (newBlockEntity != null) {
+                                        try {
+                                            // Try different methods to restore data
+                                            if (newBlockEntity instanceof net.minecraft.inventory.Inventory && blockEntityData.contains("Items")) {
+                                                // For containers like shulkers, directly restore inventory from NBT
+                                                net.minecraft.inventory.Inventory inv = (net.minecraft.inventory.Inventory) newBlockEntity;
+                                                java.util.Optional<net.minecraft.nbt.NbtList> itemsListOpt = blockEntityData.getList("Items");
+                                                
+                                                if (itemsListOpt.isPresent()) {
+                                                    net.minecraft.nbt.NbtList itemsList = itemsListOpt.get();
+                                                    for (int i = 0; i < itemsList.size(); i++) {
+                                                        if (itemsList.get(i) instanceof net.minecraft.nbt.NbtCompound) {
+                                                            net.minecraft.nbt.NbtCompound itemNbt = (net.minecraft.nbt.NbtCompound) itemsList.get(i);
+                                                            java.util.Optional<Byte> slotOpt = itemNbt.getByte("Slot");
+                                                            if (slotOpt.isPresent()) {
+                                                                int slot = slotOpt.get() & 255;
+                                                                if (slot < inv.size()) {
+                                                                    // Use NbtCompatHelper for proper ItemStack restoration
+                                                                    net.minecraft.item.ItemStack stack = com.minetracer.features.minetracer.util.NbtCompatHelper.itemStackFromNbt(itemNbt, world.getRegistryManager());
+                                                                    if (!stack.isEmpty()) {
+                                                                        inv.setStack(slot, stack);
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    inv.markDirty();
+                                                }
+                                            }
+                                        } catch (Exception dataRestoreException) {
+                                            System.err.println("[MineTracer] Failed to restore inventory data: " + dataRestoreException.getMessage());
+                                        }
+                                        
+                                        newBlockEntity.markDirty();
+                                    }
+                                    
+                                    // For shulker boxes specifically, ensure inventory is properly loaded
+                                    if (blockEntity instanceof net.minecraft.inventory.Inventory) {
+                                        ((net.minecraft.inventory.Inventory) blockEntity).markDirty();
+                                    }
+                                    
+                                    // Force block update to ensure clients see the restored contents
+                                    world.updateListeners(pos, blockState, blockState, 3);
+                                    
+                                } catch (Exception blockEntityException) {
+                                    System.err.println("[MineTracer] Failed to restore block entity data for shulker/container at " + pos + ": " + blockEntityException.getMessage());
+                                    blockEntity.markDirty();
+                                }
                             }
                         }
                     } catch (Exception e) {

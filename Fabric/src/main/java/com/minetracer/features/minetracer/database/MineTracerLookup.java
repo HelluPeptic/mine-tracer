@@ -1,26 +1,23 @@
 package com.minetracer.features.minetracer.database;
-import com.minetracer.features.minetracer.util.NbtCompatHelper;
-
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.HashSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.time.Instant;
 
-import com.minetracer.features.minetracer.cache.UserCache;
+import com.minetracer.features.minetracer.util.NbtCompatHelper;
 
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.StringNbtReader;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.registry.Registries;
+import net.minecraft.util.math.BlockPos;
 
 /**
  * MineTracer Database Lookup System
@@ -439,15 +436,44 @@ public class MineTracerLookup {
             if (data != null && data.length > 0) {
                 // Try to parse NBT data
                 String nbtString = new String(data, "UTF-8");
-                NbtCompound nbt = NbtCompatHelper.parseNbtString(nbtString);
-                return NbtCompatHelper.itemStackFromNbt(nbt, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
-            } else {
-                // Fallback: create from type ID and amount
-                return new ItemStack(Registries.ITEM.get(typeId), amount);
+                if (!nbtString.trim().isEmpty() && !nbtString.equals("{}")) {
+                    try {
+                        NbtCompound nbt = NbtCompatHelper.parseNbtString(nbtString);
+                        if (!nbt.isEmpty()) {
+                            ItemStack result = NbtCompatHelper.itemStackFromNbt(nbt, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
+                            if (!result.isEmpty()) {
+                                return result;
+                            }
+                        }
+                    } catch (Exception nbtException) {
+                        // Silent fallback to registry lookup
+                    }
+                }
             }
+            
+            // Enhanced fallback: create from type ID and amount with better error handling
+            if (typeId > 0 && amount > 0) {
+                try {
+                    // Get item from registry using ID
+                    net.minecraft.item.Item item = Registries.ITEM.get(typeId);
+                    if (item != null && item != net.minecraft.item.Items.AIR) {
+                        return new ItemStack(item, amount);
+                    }
+                } catch (Exception registryException) {
+                    // Silent fallback to placeholder
+                }
+            }
+            
+            // Last resort: create a barrier item with a warning name to indicate corruption
+            ItemStack placeholder = new ItemStack(net.minecraft.item.Items.BARRIER, Math.max(1, amount));
+            placeholder.set(net.minecraft.component.DataComponentTypes.CUSTOM_NAME, net.minecraft.text.Text.literal("§c[Corrupted Item Data]"));
+            return placeholder;
+            
         } catch (Exception e) {
-            // Fallback: create empty stack
-            return ItemStack.EMPTY;
+            // Return placeholder barrier item for corrupted data
+            ItemStack placeholder = new ItemStack(net.minecraft.item.Items.BARRIER, 1);
+            placeholder.set(net.minecraft.component.DataComponentTypes.CUSTOM_NAME, net.minecraft.text.Text.literal("§c[Critical Error - Item Data Lost]"));
+            return placeholder;
         }
     }
     
