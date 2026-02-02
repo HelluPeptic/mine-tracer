@@ -7,6 +7,8 @@
     "MixinServerPlayerInteractionManager",
     "MixinSignBlockEntity",
     "MixinItemEntity",
+    "MixinExplosion",
+    "MixinCreeperEntity",
     "ServerPlayerInteractionManagerAccessor",
     "EntityAccessor",
     "ServerPlayerEntityAccessor",

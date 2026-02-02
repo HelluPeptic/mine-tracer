@@ -1,11 +1,10 @@
 package com.minetracer;
-import net.fabricmc.api.ModInitializer;
 import com.minetracer.features.minetracer.MineTracer;
 import com.minetracer.features.minetracer.NewOptimizedLogStorage;
-import com.minetracer.features.minetracer.database.MigrationUtility;
 import com.minetracer.features.minetracer.config.MineTracerConfig;
-import com.minetracer.features.minetracer.cache.UserCache;
-import com.minetracer.features.minetracer.KillEventListener;
+import com.minetracer.features.minetracer.database.MigrationUtility;
+
+import net.fabricmc.api.ModInitializer;
 
 public class MineTracerMod implements ModInitializer {
     @Override
@@ -20,6 +19,11 @@ public class MineTracerMod implements ModInitializer {
         
         // Register event listeners
         MineTracer.register();
+        
+        // Register entity and explosion listeners
+        com.minetracer.features.minetracer.listeners.ExplosionEventListener.register();
+        
+        System.out.println("[MineTracer] Entity, explosion, and natural event logging enabled");
         
         // Initialize new database-based storage system
         NewOptimizedLogStorage.registerServerLifecycle();
