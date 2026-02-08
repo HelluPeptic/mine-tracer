@@ -197,7 +197,6 @@ public class OptimizedLogStorage {
     private static void verifyFileIntegrity() {
         try {
             if (!Files.exists(LOG_FILE)) {
-                System.out.println("[MineTracer] WARNING: Log file does not exist, this is normal for first run");
                 return;
             }
             long currentFileSize = Files.size(LOG_FILE);
@@ -217,7 +216,6 @@ public class OptimizedLogStorage {
             Path emergencyBackup = BACKUP_DIR.resolve("emergency_backup_" + System.currentTimeMillis() + ".json");
             if (Files.exists(LOG_FILE)) {
                 Files.copy(LOG_FILE, emergencyBackup);
-                System.out.println("[MineTracer] Emergency backup created: " + emergencyBackup);
             }
         } catch (Exception e) {
             System.err.println("[MineTracer] Failed to create emergency backup: " + e.getMessage());
@@ -244,7 +242,6 @@ public class OptimizedLogStorage {
             }
             Path backup = BACKUP_DIR.resolve("backup_" + System.currentTimeMillis() + ".json");
             Files.copy(LOG_FILE, backup);
-            System.out.println("[MineTracer] Regular backup created: " + backup.getFileName());
         } catch (Exception e) {
             System.err.println("[MineTracer] Failed to create regular backup: " + e.getMessage());
         }
@@ -403,7 +400,6 @@ public class OptimizedLogStorage {
                 verifyFileIntegrity();
                 if (Files.exists(LOG_FILE)) {
                     long fileSize = Files.size(LOG_FILE);
-                    System.out.println("[MineTracer] Loading logs from file (" + fileSize + " bytes)");
                     String json = Files.readString(LOG_FILE, StandardCharsets.UTF_8);
                     Type type = new TypeToken<Map<String, Object>>() {
                     }.getType();
@@ -492,17 +488,11 @@ public class OptimizedLogStorage {
                         }
                     }
                 } else {
-                    System.out.println("[MineTracer] No existing log file found - starting fresh");
+                    // No existing log file found - starting fresh
                 }
                 hasUnsavedChanges = false;
                 logsLoaded = true;
                 totalLogEntries = logs.size() + blockLogs.size() + signLogs.size() + killLogs.size() + itemPickupDropLogs.size();
-                System.out.println("[MineTracer] Successfully loaded " + totalLogEntries + " log entries");
-                System.out.println("[MineTracer] - Container logs: " + logs.size());
-                System.out.println("[MineTracer] - Block logs: " + blockLogs.size());
-                System.out.println("[MineTracer] - Sign logs: " + signLogs.size());
-                System.out.println("[MineTracer] - Kill logs: " + killLogs.size());
-                System.out.println("[MineTracer] - Item pickup/drop logs: " + itemPickupDropLogs.size());
             } catch (Exception e) {
                 System.err.println("[MineTracer] CRITICAL ERROR loading logs: " + e.getMessage());
                 e.printStackTrace();
@@ -1185,20 +1175,17 @@ public class OptimizedLogStorage {
             try {
                 loadAllLogsAsync().get(); // Wait for loading to complete
                 startPeriodicSaving();
-                System.out.println("[MineTracer] Data protection system active - 10s saves, hourly backups, integrity monitoring");
             } catch (Exception e) {
                 System.err.println("[MineTracer] CRITICAL: Failed to initialize data protection system!");
                 e.printStackTrace();
             }
         });
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(serverInstance -> {
-            System.out.println("[MineTracer] Server stopping - ensuring all data is saved...");
             isShuttingDown = true;
             try {
                 createEmergencyBackup();
                 if (hasUnsavedChanges) {
                     performAtomicSave();
-                    System.out.println("[MineTracer] Final save completed successfully");
                 }
                 stopPeriodicSaving();
             } catch (Exception e) {
@@ -1208,7 +1195,6 @@ public class OptimizedLogStorage {
             if (indexingExecutor != null && !indexingExecutor.isShutdown()) {
                 indexingExecutor.shutdown();
             }
-            System.out.println("[MineTracer] Shutdown complete - all data protected");
         });
     }
     private static void startPeriodicSaving() {
@@ -1228,7 +1214,6 @@ public class OptimizedLogStorage {
                     createRegularBackup();
                 }
             }, 60, 60, TimeUnit.MINUTES);
-            System.out.println("[MineTracer] Data protection initialized: 10-second saves, hourly backups");
         }
     }
     private static void stopPeriodicSaving() {

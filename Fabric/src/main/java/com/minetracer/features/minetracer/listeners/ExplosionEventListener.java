@@ -70,7 +70,6 @@ public class ExplosionEventListener {
         
         // Log explosion event to indicate where an explosion occurred
         // This provides context even if individual block tracking fails
-        System.out.println("[MineTracer] Explosion by " + user + " at " + center + " in " + worldName);
     }
     
     /**

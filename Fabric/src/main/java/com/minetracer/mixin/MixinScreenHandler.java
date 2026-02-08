@@ -76,7 +76,13 @@ public class MixinScreenHandler {
                     if (slot.inventory != player.getInventory()) {
                         if (minetracer$containerPos == null
                                 && slot.inventory instanceof net.minecraft.block.entity.BlockEntity be) {
-                            minetracer$containerPos = be.getPos();
+                            // Use canonical position for consistent double chest handling
+                            minetracer$containerPos = ContainerPositionTracker.getContainerPosition(
+                                be.getWorld(), be.getPos());
+                            // Fallback to raw position if canonical detection fails
+                            if (minetracer$containerPos == null) {
+                                minetracer$containerPos = be.getPos();
+                            }
                         }
                         minetracer$trackedSlots.put(i, stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
                         if (!stack.isEmpty()) {
@@ -118,7 +124,13 @@ public class MixinScreenHandler {
                 if (slot.inventory != player.getInventory()) {
                     if (minetracer$containerPos == null
                             && slot.inventory instanceof net.minecraft.block.entity.BlockEntity be) {
-                        minetracer$containerPos = be.getPos();
+                        // Use canonical position for consistent double chest handling
+                        minetracer$containerPos = ContainerPositionTracker.getContainerPosition(
+                            be.getWorld(), be.getPos());
+                        // Fallback to raw position if canonical detection fails
+                        if (minetracer$containerPos == null) {
+                            minetracer$containerPos = be.getPos();
+                        }
                     }
                     minetracer$trackedSlots.put(i, stack.isEmpty() ? ItemStack.EMPTY : stack.copy());
                     if (!stack.isEmpty()) {

@@ -265,7 +265,6 @@ public class NewOptimizedLogStorage {
         });
         
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
-            System.out.println("[MineTracer] Server stopping - shutting down storage system...");
             shutdown();
         });
     }

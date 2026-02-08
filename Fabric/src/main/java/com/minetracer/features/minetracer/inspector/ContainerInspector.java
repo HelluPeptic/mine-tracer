@@ -34,22 +34,18 @@ public class ContainerInspector extends BaseInspector {
                 
                 if (containerLogs.isEmpty()) {
                     // Try a 2-block radius search (handles double chests properly)
-                    System.out.println("[MineTracer] No exact match, trying 2-block radius for double chests...");
                     CompletableFuture<List<MineTracerLookup.ContainerLogEntry>> nearbyLogsFuture = 
                         MineTracerLookup.getContainerLogsInRangeAsync(pos, 2, null, worldName);
                     List<MineTracerLookup.ContainerLogEntry> nearbyLogs = nearbyLogsFuture.get();
                     
                     if (!nearbyLogs.isEmpty()) {
-                        System.out.println("[MineTracer] Found " + nearbyLogs.size() + " container logs within 2 blocks");
                         containerLogs = nearbyLogs; // Use the nearby logs
                     } else {
                         // Let's also check if there are any container logs at all in the database
                         try {
                             List<MineTracerLookup.ContainerLogEntry> allLogs = MineTracerLookup.getContainerLogsInRangeAsync(pos, 100, null, worldName).get();
-                            System.out.println("[MineTracer] Found " + allLogs.size() + " container logs in 100-block range");
                             sendMessage(player, "§3MineTracer §f- §7No container data found at exact position. Found " + allLogs.size() + " entries in 100-block range.");
                         } catch (Exception e2) {
-                            System.out.println("[MineTracer] Error checking broader range: " + e2.getMessage());
                             sendMessage(player, "§3MineTracer §f- §7No container data found.");
                         }
                         return;

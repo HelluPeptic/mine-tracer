@@ -1,3 +1,47 @@
+# MineTracer v1.10.27 - More Chest Variants Compatibility Update
+
+## 🎯 **Major Features Added**
+
+### 🗂️ **More Chest Variants Mod Compatibility**
+- **Full Modded Chest Support**: Complete integration with "More Chest Variants" mod by LieOnLion
+- **All Wood Types Supported**: Tracks interactions for oak, spruce, birch, jungle, acacia, dark_oak, mangrove, cherry, pale_oak, bamboo, crimson, and warped chests
+- **Trapped Chest Support**: Full compatibility with all trapped chest variants
+- **Dynamic Detection**: Intelligent container detection system that auto-discovers modded containers
+
+### 🔧 **Technical Improvements**
+- **Smart Container Detection**: Replaces hardcoded container lists with dynamic detection using:
+  - Block entity inventory interface checking
+  - Mod namespace detection (supports multiple naming conventions)
+  - ChestBlock inheritance detection  
+  - Generic container keyword matching
+- **Enhanced Compatibility**: Works with any mod that follows standard Minecraft container patterns
+- **Debug Logging**: Added comprehensive logging for troubleshooting modded container detection
+- **Error Tolerance**: Graceful fallback handling for edge cases
+
+### 🐛 **Bug Fixes**
+- **Fixed Modded Chest Logging**: Containers from More Chest Variants and other mods now properly log all interactions
+- **Improved Position Tracking**: Enhanced container position detection for SimpleInventory-based modded containers
+- **Better Error Handling**: Prevents crashes when encountering unexpected modded container types
+
+### 🔄 **Usage Instructions**
+```bash
+# Testing More Chest Variants Support:
+1. Install More Chest Variants mod alongside MineTracer
+2. Place any modded chest (e.g., spruce_chest, crimson_trapped_chest)
+3. Put items in chest - logs as "deposited" with player attribution
+4. Take items out - logs as "withdrew" with player attribution  
+5. Use '/minetracer inspect' to verify all interactions are tracked
+6. Use '/minetracer rollback' to restore items if needed
+```
+
+### 📊 **Compatibility Matrix**
+- **Minecraft**: 1.21.11
+- **Fabric Loader**: 0.18.2+
+- **More Chest Variants**: All versions supported ✅
+- **Future Mods**: Compatible with any ChestBlock or Inventory-implementing containers
+
+---
+
 # MineTracer v1.10.26 - Explosion & Entity Tracking Update
 
 ## 🎯 **Major Features Added**

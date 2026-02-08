@@ -22,8 +22,7 @@ public class MineTracerMod implements ModInitializer {
         
         // Register entity and explosion listeners
         com.minetracer.features.minetracer.listeners.ExplosionEventListener.register();
-        
-        System.out.println("[MineTracer] Entity, explosion, and natural event logging enabled");
+
         
         // Initialize new database-based storage system
         NewOptimizedLogStorage.registerServerLifecycle();
@@ -37,7 +36,6 @@ public class MineTracerMod implements ModInitializer {
         } catch (Exception e) {
             System.err.println("[MineTracer] Migration failed, but continuing with new system: " + e.getMessage());
         }
-        
-        System.out.println("[MineTracer] Initialized with CoreProtect-style optimized database system");
+
     }
 }

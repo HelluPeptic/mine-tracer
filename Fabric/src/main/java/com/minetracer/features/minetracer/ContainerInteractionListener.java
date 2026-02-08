@@ -1,4 +1,10 @@
 package com.minetracer.features.minetracer;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
@@ -10,11 +16,6 @@ import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.List;
-import java.util.ArrayList;
 public class ContainerInteractionListener {
     private static class ContainerSnapshot {
         final List<ItemStack> items;
@@ -29,28 +30,67 @@ public class ContainerInteractionListener {
     private static final Map<UUID, Map<BlockPos, ContainerSnapshot>> containerSnapshots = new ConcurrentHashMap<>();
     private static final Map<UUID, Long> lastCheckTime = new ConcurrentHashMap<>();
     private static final long CHECK_INTERVAL = 1000;
-    private static final java.util.Set<Block> TRACKED_CONTAINERS = java.util.Set.of(
-        Blocks.CHEST,
-        Blocks.TRAPPED_CHEST,
-        Blocks.BARREL,
-        Blocks.ENDER_CHEST,
-        Blocks.WHITE_SHULKER_BOX,
-        Blocks.ORANGE_SHULKER_BOX,
-        Blocks.MAGENTA_SHULKER_BOX,
-        Blocks.LIGHT_BLUE_SHULKER_BOX,
-        Blocks.YELLOW_SHULKER_BOX,
-        Blocks.LIME_SHULKER_BOX,
-        Blocks.PINK_SHULKER_BOX,
-        Blocks.GRAY_SHULKER_BOX,
-        Blocks.LIGHT_GRAY_SHULKER_BOX,
-        Blocks.CYAN_SHULKER_BOX,
-        Blocks.PURPLE_SHULKER_BOX,
-        Blocks.BLUE_SHULKER_BOX,
-        Blocks.BROWN_SHULKER_BOX,
-        Blocks.GREEN_SHULKER_BOX,
-        Blocks.RED_SHULKER_BOX,
-        Blocks.BLACK_SHULKER_BOX
-    );
+    /**
+     * Check if a block is a trackable container.
+     * This method dynamically detects containers including modded ones like More Chest Variants.
+     * 
+     * @param block The block to check
+     * @param world The world instance  
+     * @param pos The block position
+     * @return true if this block should be tracked as a container
+     */
+    private static boolean isTrackableContainer(Block block, World world, BlockPos pos) {
+        // Fast path: Check vanilla containers first
+        if (block == Blocks.CHEST || block == Blocks.TRAPPED_CHEST || 
+            block == Blocks.BARREL || block == Blocks.ENDER_CHEST) {
+            return true;
+        }
+        
+        // Check shulker boxes
+        if (block == Blocks.WHITE_SHULKER_BOX || block == Blocks.ORANGE_SHULKER_BOX ||
+            block == Blocks.MAGENTA_SHULKER_BOX || block == Blocks.LIGHT_BLUE_SHULKER_BOX ||
+            block == Blocks.YELLOW_SHULKER_BOX || block == Blocks.LIME_SHULKER_BOX ||
+            block == Blocks.PINK_SHULKER_BOX || block == Blocks.GRAY_SHULKER_BOX ||
+            block == Blocks.LIGHT_GRAY_SHULKER_BOX || block == Blocks.CYAN_SHULKER_BOX ||
+            block == Blocks.PURPLE_SHULKER_BOX || block == Blocks.BLUE_SHULKER_BOX ||
+            block == Blocks.BROWN_SHULKER_BOX || block == Blocks.GREEN_SHULKER_BOX ||
+            block == Blocks.RED_SHULKER_BOX || block == Blocks.BLACK_SHULKER_BOX) {
+            return true;
+        }
+        
+        // Dynamic detection for modded containers
+        try {
+            // Check if block entity implements inventory (for chests, barrels, etc.)
+            BlockEntity blockEntity = world.getBlockEntity(pos);
+            if (blockEntity instanceof Inventory) {
+                // Additional checks for specific mod compatibility
+                String blockId = net.minecraft.registry.Registries.BLOCK.getId(block).toString();
+                
+                // More Chest Variants compatibility - check multiple possible mod IDs
+                if ((blockId.startsWith("morechestVariants:") || 
+                     blockId.startsWith("more-chest-variants:") ||
+                     blockId.startsWith("mcv:")) && 
+                    (blockId.endsWith("_chest") || blockId.endsWith("_trapped_chest"))) {
+                    return true;
+                }
+                
+                // Generic chest detection (for any mod)
+                if (blockId.contains("chest") || blockId.contains("barrel") || 
+                    blockId.contains("storage") || blockId.contains("container")) {
+                    return true;
+                }
+                
+                // Check if it's a ChestBlock (common base class for chest-like blocks)
+                if (block instanceof net.minecraft.block.ChestBlock) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            // Silently ignore errors in dynamic detection
+        }
+        
+        return false;
+    }
     public static void register() {
         UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
             if (hand != Hand.MAIN_HAND || !(player instanceof ServerPlayerEntity)) {
@@ -59,13 +99,12 @@ public class ContainerInteractionListener {
             BlockPos pos = hitResult.getBlockPos();
             Block block = world.getBlockState(pos).getBlock();
             
-            if (TRACKED_CONTAINERS.contains(block)) {
-                // Store position for MixinScreenHandler to use (for SimpleInventory chests)
-                ContainerPositionTracker.setLastOpenedContainer(player.getUuid(), pos);
-                // DISABLED: MixinScreenHandler handles container tracking more accurately
-                // This was causing duplicate withdrawals to be logged
-                // takeContainerSnapshot((ServerPlayerEntity) player, world, pos);
-                // scheduleContainerCheck((ServerPlayerEntity) player, pos);
+            if (ContainerPositionTracker.isTrackableContainer(world, pos)) {
+                // Get canonical container position using CoreProtect's approach
+                BlockPos canonicalPos = ContainerPositionTracker.getContainerPosition(world, pos);
+                if (canonicalPos != null) {
+                    ContainerPositionTracker.setLastOpenedContainer(player.getUuid(), canonicalPos);
+                }
             }
             return ActionResult.PASS;
         });

@@ -34,7 +34,7 @@ public class MigrationUtility {
             return true;
         }
         
-        System.out.println("[MineTracer] Starting migration from JSON to database...");
+        // Starting migration from JSON to database...
         
         try {
             // Read JSON file
