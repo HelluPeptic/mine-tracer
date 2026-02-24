@@ -43,8 +43,8 @@ dependencies {
 
     modApi("com.terraformersmc:modmenu:11.0.1") { exclude(module: "fabric-api") }
 
-    modImplementation "me.lucko:fabric-permissions-api:0.2-SNAPSHOT"
-    include "me.lucko:fabric-permissions-api:0.2-SNAPSHOT"
+    modImplementation "me.lucko:fabric-permissions-api:0.6.1"
+    include "me.lucko:fabric-permissions-api:0.6.1"
 }
 
 loom {

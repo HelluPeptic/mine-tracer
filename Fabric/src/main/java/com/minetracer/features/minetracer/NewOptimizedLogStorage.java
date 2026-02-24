@@ -261,6 +261,14 @@ public class NewOptimizedLogStorage {
             com.minetracer.features.minetracer.util.ServerRegistry.setServer(server);
             if (!initialize()) {
                 System.err.println("[MineTracer] CRITICAL: Failed to initialize storage system!");
+                return;
+            }
+            
+            // Attempt to migrate existing JSON data after storage system is initialized
+            try {
+                com.minetracer.features.minetracer.database.MigrationUtility.migrateFromJSON();
+            } catch (Exception e) {
+                System.err.println("[MineTracer] Migration failed, but continuing with new system: " + e.getMessage());
             }
         });
         

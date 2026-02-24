@@ -2,7 +2,6 @@ package com.minetracer;
 import com.minetracer.features.minetracer.MineTracer;
 import com.minetracer.features.minetracer.NewOptimizedLogStorage;
 import com.minetracer.features.minetracer.config.MineTracerConfig;
-import com.minetracer.features.minetracer.database.MigrationUtility;
 
 import net.fabricmc.api.ModInitializer;
 
@@ -29,13 +28,6 @@ public class MineTracerMod implements ModInitializer {
         
         // Initialize CoreProtect-style inspector system
         com.minetracer.features.minetracer.inspector.InspectorEventHandler.init();
-        
-        // Attempt to migrate existing JSON data
-        try {
-            MigrationUtility.migrateFromJSON();
-        } catch (Exception e) {
-            System.err.println("[MineTracer] Migration failed, but continuing with new system: " + e.getMessage());
-        }
 
     }
 }
