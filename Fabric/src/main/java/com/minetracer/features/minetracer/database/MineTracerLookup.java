@@ -272,6 +272,11 @@ public class MineTracerLookup {
      */
     public static CompletableFuture<List<BlockLogEntry>> getBlockLogsInRangeAsync(
             BlockPos center, int range, String userFilter, String worldName) {
+        return getBlockLogsInRangeAsync(center, range, userFilter, worldName, 1000);
+    }
+
+    public static CompletableFuture<List<BlockLogEntry>> getBlockLogsInRangeAsync(
+            BlockPos center, int range, String userFilter, String worldName, int limit) {
         return CompletableFuture.supplyAsync(() -> {
             List<BlockLogEntry> results = new ArrayList<>();
             
@@ -312,7 +317,11 @@ public class MineTracerLookup {
                     params.add(center.getZ() + range);
                 }
                 
-                query.append("ORDER BY b.time DESC LIMIT 1000");
+                if (limit > 0 && limit < Integer.MAX_VALUE) {
+                    query.append("ORDER BY b.time DESC LIMIT ").append(limit);
+                } else {
+                    query.append("ORDER BY b.time DESC");
+                }
                 
                 try (PreparedStatement stmt = connection.prepareStatement(query.toString())) {
                     for (int i = 0; i < params.size(); i++) {

@@ -29,11 +29,15 @@ public class NbtCompatHelper {
             return ItemStack.EMPTY;
         }
         try {
-            java.util.Optional<ItemStack> result = ItemStack.CODEC.parse(
-                net.minecraft.nbt.NbtOps.INSTANCE, nbt
-            ).result();
-            return result.orElse(ItemStack.EMPTY);
+            // Use the Minecraft CODEC with proper error handling to avoid corrupted items
+            com.mojang.serialization.DataResult<ItemStack> result = ItemStack.CODEC.parse(
+                registryManager.getOps(net.minecraft.nbt.NbtOps.INSTANCE), nbt
+            );
+            return result.resultOrPartial(error -> {
+                System.err.println("[MineTracer] Failed to parse ItemStack from NBT: " + error);
+            }).orElse(ItemStack.EMPTY);
         } catch (Exception e) {
+            System.err.println("[MineTracer] Exception parsing ItemStack from NBT: " + e.getMessage());
             return ItemStack.EMPTY;
         }
     }
@@ -43,10 +47,15 @@ public class NbtCompatHelper {
             return new NbtCompound();
         }
         try {
-            return (NbtCompound) ItemStack.CODEC.encodeStart(
-                net.minecraft.nbt.NbtOps.INSTANCE, stack
-            ).getOrThrow();
+            // Use the Minecraft CODEC with proper error handling
+            com.mojang.serialization.DataResult<net.minecraft.nbt.NbtElement> result = ItemStack.CODEC.encodeStart(
+                registryManager.getOps(net.minecraft.nbt.NbtOps.INSTANCE), stack
+            );
+            return (NbtCompound) result.resultOrPartial(error -> {
+                System.err.println("[MineTracer] Failed to encode ItemStack to NBT: " + error);
+            }).orElse(new NbtCompound());
         } catch (Exception e) {
+            System.err.println("[MineTracer] Exception encoding ItemStack to NBT: " + e.getMessage());
             return new NbtCompound();
         }
     }

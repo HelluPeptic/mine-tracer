@@ -39,8 +39,8 @@ public class MixinRavagerEntity {
                         (Entity) ravager,
                         world,
                         pos,
-                        currentState.getBlock(),
-                        net.minecraft.block.Blocks.AIR
+                        currentState,
+                        net.minecraft.block.Blocks.AIR.getDefaultState()
                     );
                 }
             }

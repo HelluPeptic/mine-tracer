@@ -1,19 +1,18 @@
 package com.minetracer.features.minetracer.database;
-import com.minetracer.features.minetracer.util.NbtCompatHelper;
-
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.minetracer.features.minetracer.util.NbtCompatHelper;
+
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.registry.Registries;
+import net.minecraft.util.math.BlockPos;
 
 /**
  * MineTracer Database Processor
@@ -45,10 +44,6 @@ public class MineTracerProcessor {
             try {
                 processBatchEntries(connection, batch, associatedData);
                 connection.commit();
-                
-                if (batch.size() > 50) {
-                    System.out.println("[MineTracer] Processed batch of " + batch.size() + " entries");
-                }
                 
             } catch (Exception e) {
                 connection.rollback();

@@ -9,6 +9,7 @@
     "MixinItemEntity",
     "MixinExplosion",
     "MixinCreeperEntity",
+    "MixinExplosionImpl",
     "ServerPlayerInteractionManagerAccessor",
     "EntityAccessor",
     "ServerPlayerEntityAccessor",

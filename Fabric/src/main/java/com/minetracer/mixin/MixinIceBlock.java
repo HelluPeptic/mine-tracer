@@ -26,7 +26,7 @@ public class MixinIceBlock {
     private void onIceMelt(BlockState state, ServerWorld world, BlockPos pos, Random random, CallbackInfo ci) {
         try {
             // Before the ice melts, log that it's about to be broken by melting
-            NaturalEventListener.processIceMelt(world, pos, state.getBlock());
+            NaturalEventListener.processIceMelt(world, pos, state);
         } catch (Exception e) {
             // Silently fail to avoid crashing
         }

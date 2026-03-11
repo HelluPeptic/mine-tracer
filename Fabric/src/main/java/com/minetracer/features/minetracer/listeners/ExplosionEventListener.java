@@ -35,7 +35,7 @@ public class ExplosionEventListener {
         for (BlockPos pos : destroyedBlocks) {
             Block block = world.getBlockState(pos).getBlock();
             String blockId = net.minecraft.registry.Registries.BLOCK.getId(block).toString();
-            String nbt = world.getBlockState(pos).toString(); // Get block state as NBT
+            String nbt = createBlockStateNbt(world.getBlockState(pos));
             
             // Log the block break with string user
             logExplosionBlockBreak(user, pos, blockId, nbt, world);
@@ -52,10 +52,39 @@ public class ExplosionEventListener {
     public static void processExplosionBlock(Entity entity, ServerWorld world, BlockPos pos, net.minecraft.block.BlockState state) {
         String user = getExplosionUser(entity);
         String blockId = net.minecraft.registry.Registries.BLOCK.getId(state.getBlock()).toString();
-        String nbt = state.toString(); // Get block state as NBT
-        
-        // Log the block break with string user
+        String nbt = buildNbtString(world, pos, state);
+
         logExplosionBlockBreak(user, pos, blockId, nbt, world);
+    }
+
+    /**
+     * Build the NBT string for a block, including block entity data for containers.
+     * When the block has a block entity (chest, barrel, etc.) this produces the same
+     * SNBT format as player breaks: {Properties:{...}, BlockEntityTag:{...}}
+     * so that rollback can restore inventory contents.
+     * Otherwise returns the lightweight bracket format: [key=val,...]
+     *
+     * Called on the main server thread, so world.getBlockEntity() is safe here.
+     */
+    private static String buildNbtString(ServerWorld world, BlockPos pos, net.minecraft.block.BlockState state) {
+        try {
+            net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
+            if (blockEntity != null) {
+                net.minecraft.nbt.NbtCompound fullNbt = new net.minecraft.nbt.NbtCompound();
+                if (!state.getProperties().isEmpty()) {
+                    net.minecraft.nbt.NbtCompound propertiesNbt = new net.minecraft.nbt.NbtCompound();
+                    for (net.minecraft.state.property.Property<?> prop : state.getProperties()) {
+                        propertiesNbt.putString(prop.getName(), state.get(prop).toString());
+                    }
+                    fullNbt.put("Properties", propertiesNbt);
+                }
+                fullNbt.put("BlockEntityTag", blockEntity.createNbt(world.getRegistryManager()));
+                return fullNbt.toString();
+            }
+        } catch (Exception e) {
+            // Fall through to simple format
+        }
+        return createBlockStateNbt(state);
     }
     
     /**
@@ -126,5 +155,29 @@ public class ExplosionEventListener {
         }
         
         return "#explosion";
+    }
+    
+    /**
+     * Create a CoreProtect-style block state properties string.
+     * Format: "[key=value,key=value]" or "" for blocks with no properties.
+     * Equivalent to Bukkit's blockData.getAsString() properties section.
+     */
+    private static String createBlockStateNbt(net.minecraft.block.BlockState state) {
+        try {
+            if (state.getProperties().isEmpty()) {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder("[");
+            boolean first = true;
+            for (net.minecraft.state.property.Property<?> property : state.getProperties()) {
+                if (!first) sb.append(',');
+                sb.append(property.getName()).append('=').append(state.get(property).toString());
+                first = false;
+            }
+            sb.append(']');
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
     }
 }

@@ -40,8 +40,8 @@ public class MixinSpreadableBlock {
                     NaturalEventListener.processGrassSpread(
                         world,
                         targetPos,
-                        net.minecraft.block.Blocks.DIRT, // Assume dirt was converted
-                        targetState.getBlock()
+                        net.minecraft.block.Blocks.DIRT.getDefaultState(), // Assume dirt was converted
+                        targetState
                     );
                 }
             }

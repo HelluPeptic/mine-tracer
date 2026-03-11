@@ -1,6 +1,7 @@
 package com.minetracer.mixin;
 
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -17,43 +18,55 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.world.WorldAccess;
 
 /**
- * Mixin to track water and lava flow
+ * Mixin to track water and lava flow.
+ *
+ * We inject at HEAD to capture the old BlockState *before* the world mutates,
+ * then at TAIL to see what the world now contains. This gives us accurate
+ * before/after information without relying on Blocks.AIR guesses.
  */
 @Mixin(FlowableFluid.class)
 public class MixinFlowableFluid {
-    
-    /**
-     * Track fluid flow when it changes blocks
-     */
-    @Inject(method = "flow", at = @At("TAIL"))
-    private void onFluidFlow(WorldAccess world, BlockPos pos, BlockState state, Direction direction, FluidState fluidState, CallbackInfo ci) {
-        if (!(world instanceof ServerWorld serverWorld)) {
-            return;
-        }
-        
+
+    /** Cached pre-flow state; thread-local style via unique field on the instance. */
+    @Unique
+    private BlockState minetracer$preFlowState = null;
+
+    @Inject(method = "flow", at = @At("HEAD"))
+    private void onFluidFlowHead(WorldAccess world, BlockPos pos, BlockState state,
+            Direction direction, FluidState fluidState, CallbackInfo ci) {
+        if (!(world instanceof ServerWorld)) return;
         try {
-            FlowableFluid thisFluid = (FlowableFluid) (Object) this;
-            BlockState currentState = world.getBlockState(pos);
-            
-            // Check if this is water or lava and if a block change occurred
-            boolean isWater = thisFluid.getBucketItem() == net.minecraft.item.Items.WATER_BUCKET;
-            
-            // If the flow resulted in a solid block (like cobblestone generation)
-            if (currentState.getBlock() != Blocks.AIR && 
-                currentState.getBlock() != Blocks.CAVE_AIR &&
-                currentState.getBlock() != Blocks.WATER &&
-                currentState.getBlock() != Blocks.LAVA) {
-                
-                NaturalEventListener.processFluidFlow(
-                    serverWorld, 
-                    pos, 
-                    Blocks.AIR, // Assume air was replaced
-                    currentState.getBlock(), 
-                    isWater
-                );
-            }
+            minetracer$preFlowState = world.getBlockState(pos);
         } catch (Exception e) {
-            // Silently fail to avoid crashing
+            minetracer$preFlowState = null;
+        }
+    }
+
+    @Inject(method = "flow", at = @At("TAIL"))
+    private void onFluidFlowTail(WorldAccess world, BlockPos pos, BlockState state,
+            Direction direction, FluidState fluidState, CallbackInfo ci) {
+        if (!(world instanceof ServerWorld serverWorld)) return;
+
+        BlockState oldState = minetracer$preFlowState;
+        minetracer$preFlowState = null;
+
+        if (oldState == null) return;
+
+        try {
+            BlockState newState = world.getBlockState(pos);
+
+            // Skip if nothing meaningful changed, or if the new state is just fluid
+            if (newState.getBlock() == oldState.getBlock()) return;
+            if (newState.getBlock() == Blocks.WATER || newState.getBlock() == Blocks.LAVA) return;
+            if (oldState.getBlock() == Blocks.WATER || oldState.getBlock() == Blocks.LAVA
+                    || oldState.getBlock() == Blocks.BUBBLE_COLUMN) return;
+
+            FlowableFluid thisFluid = (FlowableFluid) (Object) this;
+            boolean isWater = thisFluid.getBucketItem() == net.minecraft.item.Items.WATER_BUCKET;
+
+            NaturalEventListener.processFluidFlow(serverWorld, pos, oldState, newState, isWater);
+        } catch (Exception e) {
+            // Silently fail to avoid crashing the server
         }
     }
 }

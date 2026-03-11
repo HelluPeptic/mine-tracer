@@ -34,7 +34,7 @@ public class MixinEndermanEntity {
             if (!currentState.isAir()) {
                 // Log the block being picked up (broken)
                 EntityBlockChangeListener.processEntityBlockChange(
-                    enderman, world, pos, currentState.getBlock(), Blocks.AIR);
+                    enderman, world, pos, currentState, Blocks.AIR.getDefaultState());
             }
         }
     }
@@ -55,7 +55,7 @@ public class MixinEndermanEntity {
             if (carriedBlock != null && !carriedBlock.isAir()) {
                 // Log the block being placed
                 EntityBlockChangeListener.processEntityBlockChange(
-                    enderman, world, pos, oldState.getBlock(), carriedBlock.getBlock());
+                    enderman, world, pos, oldState, carriedBlock);
             }
         }
     }
