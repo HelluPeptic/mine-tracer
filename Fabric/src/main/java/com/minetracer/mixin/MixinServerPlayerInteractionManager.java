@@ -194,7 +194,7 @@ public class MixinServerPlayerInteractionManager {
             }
             return message.toString();
         }, OptimizedLogStorage.getAsyncExecutor()).thenAccept(message -> {
-            player.displayClientMessage(net.minecraft.network.chat.Component.literal(message), false);
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(message), false);
         });
     }
     @org.spongepowered.asm.mixin.Unique
@@ -232,7 +232,7 @@ public class MixinServerPlayerInteractionManager {
             }
             return message.toString();
         }, OptimizedLogStorage.getAsyncExecutor()).thenAccept(message -> {
-            player.displayClientMessage(net.minecraft.network.chat.Component.literal(message), false);
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(message), false);
         });
     }
 }

@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.13-SNAPSHOT'
+    id 'net.fabricmc.fabric-loom' version '1.17.19'
     id 'maven-publish'
     id 'idea'
 }
@@ -17,9 +17,9 @@ repositories {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    // 26.1+ ships unobfuscated (real names baked into the jar) - no mappings artifact to declare
+    implementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     implementation "org.jetbrains:annotations:23.0.0"
     implementation group: 'com.google.code.findbugs', name: 'jsr305', version: '3.0.1'
@@ -32,7 +32,7 @@ dependencies {
 
     // FastUtil for high-performance collections - Use implementation only, let mod loader handle versions
     implementation 'it.unimi.dsi:fastutil:8.5.15'
-    
+
     // Caffeine for high-performance caching
     implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
     include 'com.github.ben-manes.caffeine:caffeine:3.1.8'
@@ -41,16 +41,22 @@ dependencies {
     implementation 'org.xerial:sqlite-jdbc:3.43.2.0'
     include 'org.xerial:sqlite-jdbc:3.43.2.0'
 
-    modApi("com.terraformersmc:modmenu:11.0.1") { exclude(module: "fabric-api") }
+    api("com.terraformersmc:modmenu:20.0.1") { exclude(module: "fabric-api") }
 
-    modImplementation "me.lucko:fabric-permissions-api:0.6.1"
-    include "me.lucko:fabric-permissions-api:0.6.1"
+    implementation "me.lucko:fabric-permissions-api:0.7.0"
+    include "me.lucko:fabric-permissions-api:0.7.0"
 }
 
 loom {
     mixin {
         defaultRefmapName.set("${mod_id}_fabric.refmap.json")
         useLegacyMixinAp = false
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet sourceSets.main
+        }
     }
 
     runs {
@@ -70,6 +76,15 @@ loom {
 }
 
 version = rootProject.version
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 25
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
 
 processResources {
     inputs.property "version", project.version
@@ -108,6 +123,5 @@ publishing {
     }
 }
 
-archivesBaseName = "minetracer-fabric-${minecraft_version}"
-
+base.archivesName = "minetracer-fabric-${minecraft_version}"
 

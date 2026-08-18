@@ -540,7 +540,7 @@ public class MineTracerCommand {
             MineTracerLookup.ContainerLogEntry ce = (MineTracerLookup.ContainerLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(ce.timestamp, Instant.now()).getSeconds());
             String itemId = BuiltInRegistries.ITEM.getKey(ce.stack.getItem()).toString();
-            String itemName = ce.stack.getItem().getName().getString();
+            String itemName = ce.stack.getItem().getName(ce.stack).getString();
             boolean isRolledBack = ce.rolledBack;
             Component base = Component.literal(timeAgo + " ago").withStyle(ChatFormatting.WHITE)
                     .append(Component.literal(" — ").withStyle(ChatFormatting.WHITE))
@@ -598,7 +598,7 @@ public class MineTracerCommand {
             MineTracerLookup.ItemPickupDropLogEntry ie = (MineTracerLookup.ItemPickupDropLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(ie.timestamp, Instant.now()).getSeconds());
             String itemId = BuiltInRegistries.ITEM.getKey(ie.stack.getItem()).toString();
-            String itemName = ie.stack.getItem().getName().getString();
+            String itemName = ie.stack.getItem().getName(ie.stack).getString();
             Component base = Component.literal(timeAgo + " ago").withStyle(ChatFormatting.WHITE)
                     .append(Component.literal(" — ").withStyle(ChatFormatting.WHITE))
                     .append(Component.literal(ie.playerName).withStyle(ChatFormatting.AQUA))

@@ -6,7 +6,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -40,7 +40,7 @@ public class MixinScreenHandler {
     }
     @Inject(method = "clicked", at = @At("HEAD"))
     private void minetracer$logSlotClickHead(int slotIndex, int button,
-            ClickType actionType, Player player, CallbackInfo ci) {
+            ContainerInput actionType, Player player, CallbackInfo ci) {
         AbstractContainerMenu self = (AbstractContainerMenu) (Object) this;
         if (self == null || self.slots.size() <= 3) {
             minetracer$isContainerInteraction = false;
@@ -54,7 +54,7 @@ public class MixinScreenHandler {
         if (!minetracer$isContainerInteraction) {
             return;
         }
-        if (slotIndex == -999 || actionType == ClickType.QUICK_CRAFT) {
+        if (slotIndex == -999 || actionType == ContainerInput.QUICK_CRAFT) {
             if (!minetracer$isDragOperation) {
                 minetracer$isDragOperation = true;
                 if (minetracer$trackedSlots == null) {
@@ -147,7 +147,7 @@ public class MixinScreenHandler {
     }
     @Inject(method = "clicked", at = @At("RETURN"))
     private void minetracer$logSlotClickReturn(int slotIndex, int button,
-            ClickType actionType, Player player, CallbackInfo ci) {
+            ContainerInput actionType, Player player, CallbackInfo ci) {
         if (!minetracer$isContainerInteraction || minetracer$trackedSlots == null) {
             return;
         }
