@@ -139,8 +139,8 @@ public class MineTracerConsumer implements Runnable {
                 List<QueueEntry> batch = new ArrayList<>();
                 QueueEntry entry;
                 
-                // Collect batch (up to 100 entries)
-                while ((entry = queues[processQueue].poll()) != null && batch.size() < 100) {
+                // Collect batch (up to 1000 entries)
+                while ((entry = queues[processQueue].poll()) != null && batch.size() < 1000) {
                     batch.add(entry);
                 }
                 
@@ -179,6 +179,24 @@ public class MineTracerConsumer implements Runnable {
         return queues[0].isEmpty() && queues[1].isEmpty();
     }
     
+    /**
+     * Block the calling thread until both consumer queues are empty or the timeout expires.
+     * Use before rollback to ensure all pending log entries are written to the database.
+     *
+     * @param timeoutMs maximum milliseconds to wait
+     */
+    public static void waitForQueue(long timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (!(queues[0].isEmpty() && queues[1].isEmpty()) && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+    }
+
     /**
      * Get current queue size
      */

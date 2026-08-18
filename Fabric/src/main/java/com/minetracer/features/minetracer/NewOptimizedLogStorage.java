@@ -15,6 +15,7 @@ import java.util.UUID;
 import com.minetracer.features.minetracer.database.MineTracerDatabase;
 import com.minetracer.features.minetracer.database.MineTracerConsumer;
 import com.minetracer.features.minetracer.database.MineTracerLookup;
+import com.minetracer.features.minetracer.config.MineTracerConfig;
 
 /**
  * New optimized storage system using CoreProtect-style database approach
@@ -68,7 +69,7 @@ public class NewOptimizedLogStorage {
      * Log container action (chest, barrel, etc.)
      */
     public static void logContainerAction(String action, PlayerEntity player, BlockPos pos, ItemStack stack) {
-        if (stack.isEmpty() || !initialized) {
+        if (stack.isEmpty() || !initialized || !MineTracerConfig.LOG_CONTAINER_TRANSACTIONS) {
             return;
         }
         
@@ -82,7 +83,7 @@ public class NewOptimizedLogStorage {
      * Log block action (place, break)
      */
     public static void logBlockAction(String action, PlayerEntity player, BlockPos pos, String blockId, String nbt) {
-        if (!initialized) {
+        if (!initialized || !MineTracerConfig.LOG_BLOCK_CHANGES) {
             return;
         }
         
@@ -96,7 +97,7 @@ public class NewOptimizedLogStorage {
      * Log sign action
      */
     public static void logSignAction(String action, PlayerEntity player, BlockPos pos, String text, String nbt) {
-        if (!initialized) {
+        if (!initialized || !MineTracerConfig.LOG_SIGN_TEXT) {
             return;
         }
         
@@ -111,7 +112,7 @@ public class NewOptimizedLogStorage {
      * Log kill action
      */
     public static void logKillAction(String killerName, String victimName, BlockPos pos, String world) {
-        if (!initialized) {
+        if (!initialized || !MineTracerConfig.LOG_ENTITY_KILLS) {
             return;
         }
         
@@ -125,6 +126,10 @@ public class NewOptimizedLogStorage {
      */
     public static void logItemPickupDropAction(String action, PlayerEntity player, BlockPos pos, ItemStack stack, String world) {
         if (stack.isEmpty() || player == null || !initialized) {
+            return;
+        }
+        boolean isPickup = "pickup".equals(action);
+        if ((isPickup && !MineTracerConfig.LOG_ITEM_PICKUPS) || (!isPickup && !MineTracerConfig.LOG_ITEM_DROPS)) {
             return;
         }
         
@@ -260,11 +265,18 @@ public class NewOptimizedLogStorage {
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(server -> {
             if (!initialize()) {
                 System.err.println("[MineTracer] CRITICAL: Failed to initialize storage system!");
+                return;
+            }
+
+            // Attempt to migrate existing JSON data after storage system is initialized
+            try {
+                com.minetracer.features.minetracer.database.MigrationUtility.migrateFromJSON();
+            } catch (Exception e) {
+                System.err.println("[MineTracer] Migration failed, but continuing with new system: " + e.getMessage());
             }
         });
-        
+
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
-            System.out.println("[MineTracer] Server stopping - shutting down storage system...");
             shutdown();
         });
     }

@@ -227,6 +227,11 @@ public class MineTracerLookup {
      */
     public static CompletableFuture<List<BlockLogEntry>> getBlockLogsInRangeAsync(
             BlockPos center, int range, String userFilter, String worldName) {
+        return getBlockLogsInRangeAsync(center, range, userFilter, worldName, 1000);
+    }
+
+    public static CompletableFuture<List<BlockLogEntry>> getBlockLogsInRangeAsync(
+            BlockPos center, int range, String userFilter, String worldName, int limit) {
         return CompletableFuture.supplyAsync(() -> {
             List<BlockLogEntry> results = new ArrayList<>();
             
@@ -267,13 +272,17 @@ public class MineTracerLookup {
                     params.add(center.getZ() + range);
                 }
                 
-                query.append("ORDER BY b.time DESC LIMIT 1000");
-                
+                if (limit > 0 && limit < Integer.MAX_VALUE) {
+                    query.append("ORDER BY b.time DESC LIMIT ").append(limit);
+                } else {
+                    query.append("ORDER BY b.time DESC");
+                }
+
                 try (PreparedStatement stmt = connection.prepareStatement(query.toString())) {
                     for (int i = 0; i < params.size(); i++) {
                         stmt.setObject(i + 1, params.get(i));
                     }
-                    
+
                     ResultSet rs = stmt.executeQuery();
                     while (rs.next()) {
                         BlockLogEntry entry = parseBlockEntry(rs, center, range);
@@ -391,15 +400,44 @@ public class MineTracerLookup {
             if (data != null && data.length > 0) {
                 // Try to parse NBT data
                 String nbtString = new String(data, "UTF-8");
-                NbtCompound nbt = StringNbtReader.parse(nbtString);
-                return ItemStack.fromNbt(nbt);
-            } else {
-                // Fallback: create from type ID and amount
-                return new ItemStack(Registries.ITEM.get(typeId), amount);
+                if (!nbtString.trim().isEmpty() && !nbtString.equals("{}")) {
+                    try {
+                        NbtCompound nbt = StringNbtReader.parse(nbtString);
+                        if (!nbt.isEmpty()) {
+                            ItemStack result = ItemStack.fromNbt(nbt);
+                            if (!result.isEmpty()) {
+                                return result;
+                            }
+                        }
+                    } catch (Exception nbtException) {
+                        // Silent fallback to registry lookup
+                    }
+                }
             }
+
+            // Enhanced fallback: create from type ID and amount with better error handling
+            if (typeId > 0 && amount > 0) {
+                try {
+                    // Get item from registry using ID
+                    net.minecraft.item.Item item = Registries.ITEM.get(typeId);
+                    if (item != null && item != net.minecraft.item.Items.AIR) {
+                        return new ItemStack(item, amount);
+                    }
+                } catch (Exception registryException) {
+                    // Silent fallback to placeholder
+                }
+            }
+
+            // Last resort: create a barrier item with a warning name to indicate corruption
+            ItemStack placeholder = new ItemStack(net.minecraft.item.Items.BARRIER, Math.max(1, amount));
+            placeholder.setCustomName(net.minecraft.text.Text.literal("§c[Corrupted Item Data]"));
+            return placeholder;
+
         } catch (Exception e) {
-            // Fallback: create empty stack
-            return ItemStack.EMPTY;
+            // Return placeholder barrier item for corrupted data
+            ItemStack placeholder = new ItemStack(net.minecraft.item.Items.BARRIER, 1);
+            placeholder.setCustomName(net.minecraft.text.Text.literal("§c[Critical Error - Item Data Lost]"));
+            return placeholder;
         }
     }
     
@@ -621,6 +659,55 @@ public class MineTracerLookup {
             
             return results;
         });
+    }
+
+    /**
+     * Get sign logs for specific user with world filter (async)
+     */
+    public static CompletableFuture<List<SignLogEntry>> getSignLogsForUserAsync(String userName, String worldName) {
+        return CompletableFuture.supplyAsync(() -> {
+            List<SignLogEntry> results = new ArrayList<>();
+
+            try (Connection connection = MineTracerDatabase.getConnection()) {
+                if (connection == null) {
+                    return results;
+                }
+
+                String query = "SELECT s.time, u.user, s.x, s.y, s.z, s.action, s.text, s.nbt, s.rolled_back " +
+                              "FROM minetracer_sign s " +
+                              "JOIN minetracer_user u ON s.user = u.id " +
+                              "JOIN minetracer_world w ON s.wid = w.id " +
+                              "WHERE u.user = ? AND w.world = ? " +
+                              "ORDER BY s.time DESC LIMIT 1000";
+
+                PreparedStatement statement = connection.prepareStatement(query);
+                statement.setString(1, userName);
+                statement.setString(2, worldName);
+
+                ResultSet rs = statement.executeQuery();
+                while (rs.next()) {
+                    long time = rs.getLong("time");
+                    String user = rs.getString("user");
+                    int x = rs.getInt("x");
+                    int y = rs.getInt("y");
+                    int z = rs.getInt("z");
+                    String action = rs.getString("action");
+                    String text = rs.getString("text");
+                    String nbt = rs.getString("nbt");
+                    boolean rolledBack = rs.getInt("rolled_back") > 0;
+
+                    BlockPos pos = new BlockPos(x, y, z);
+                    results.add(new SignLogEntry(action, user, pos, text, nbt,
+                                               Instant.ofEpochSecond(time), rolledBack));
+                }
+
+            } catch (SQLException e) {
+                System.err.println("[MineTracer] Error getting sign logs for user: " + e.getMessage());
+                e.printStackTrace();
+            }
+
+            return results;
+        }, queryExecutor);
     }
 
     /**

@@ -8,6 +8,7 @@
     "MixinSignBlockEntity",
     "MixinItemEntity",
     "MixinPlayerEntityDrop",
+    "MixinExplosionImpl",
     "ServerPlayerInteractionManagerAccessor",
     "MixinInspectorLeftClick"
   ],

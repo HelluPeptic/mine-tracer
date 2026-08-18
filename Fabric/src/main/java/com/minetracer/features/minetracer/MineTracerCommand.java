@@ -1,10 +1,4 @@
 package com.minetracer.features.minetracer;
-import com.minetracer.features.minetracer.database.MineTracerLookup;
-import com.mojang.brigadier.Command;
-import com.mojang.brigadier.arguments.StringArgumentType;
-import com.mojang.brigadier.context.CommandContext;
-import com.mojang.brigadier.suggestion.Suggestions;
-import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -12,14 +6,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+
+import com.minetracer.features.minetracer.database.MineTracerConsumer;
+import com.minetracer.features.minetracer.database.MineTracerLookup;
+import com.mojang.brigadier.Command;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+
 import me.lucko.fabric.api.permissions.v0.Permissions;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.StringNbtReader;
 import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.command.CommandManager;
@@ -91,6 +92,40 @@ public class MineTracerCommand {
                     .executes(context -> {
                         ServerCommandSource source = context.getSource();
                         source.sendError(Text.literal("Invalid command usage. Use /minetracer <lookup|rollback|restore|undo|page|inspector|save|saves>"));
+                        return 0;
+                    }));
+
+            // /mt shorthand aliases
+            dispatcher.register(CommandManager.literal("mt")
+                    .then(CommandManager.literal("i")
+                            .requires(source -> Permissions.check(source, "minetracer.command.inspector", 2))
+                            .executes(MineTracerCommand::toggleInspector))
+                    .then(CommandManager.literal("l")
+                            .requires(source -> Permissions.check(source, "minetracer.command.lookup", 2))
+                            .then(CommandManager.argument("arg", StringArgumentType.greedyString())
+                                    .suggests(MineTracerCommand::suggestPlayers)
+                                    .executes(MineTracerCommand::lookup)))
+                    .then(CommandManager.literal("rb")
+                            .requires(source -> Permissions.check(source, "minetracer.command.rollback", 2))
+                            .then(CommandManager.argument("arg", StringArgumentType.greedyString())
+                                    .suggests(MineTracerCommand::suggestPlayers)
+                                    .executes(MineTracerCommand::rollback)))
+                    .then(CommandManager.literal("rs")
+                            .requires(source -> Permissions.check(source, "minetracer.command.restore", 2))
+                            .then(CommandManager.argument("arg", StringArgumentType.greedyString())
+                                    .suggests(MineTracerCommand::suggestPlayers)
+                                    .executes(MineTracerCommand::restore)))
+                    .then(CommandManager.literal("undo")
+                            .requires(source -> Permissions.check(source, "minetracer.command.undo", 2))
+                            .executes(MineTracerCommand::undo))
+                    .then(CommandManager.literal("page")
+                            .requires(source -> Permissions.check(source, "minetracer.command.page", 2))
+                            .then(CommandManager
+                                    .argument("page", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
+                                    .executes(MineTracerCommand::lookupPage)))
+                    .executes(context -> {
+                        ServerCommandSource source = context.getSource();
+                        source.sendError(Text.literal("Invalid command usage. Use /mt i (inspector), /mt l <filters> (lookup), /mt rb <filters> (rollback), /mt rs <filters> (restore)"));
                         return 0;
                     }));
         });
@@ -332,7 +367,7 @@ public class MineTracerCommand {
             String worldName = player.getServerWorld().getRegistryKey().getValue().toString();
             if (hasUser && !hasRange) {
                 blockLogsFuture = MineTracerLookup.getBlockLogsForUserAsync(userFilter, worldName);
-                signLogsFuture = CompletableFuture.supplyAsync(() -> new ArrayList<>()); // Signs for user not implemented yet
+                signLogsFuture = MineTracerLookup.getSignLogsForUserAsync(userFilter, worldName);
                 containerLogsFuture = MineTracerLookup.getContainerLogsForUserAsync(userFilter, worldName);
                 killLogsFuture = MineTracerLookup.getKillLogsForUserAsync(userFilter, worldName);
                 itemLogsFuture = MineTracerLookup.getItemPickupDropLogsForUserAsync(userFilter, worldName);
@@ -349,9 +384,10 @@ public class MineTracerCommand {
                 List<MineTracerLookup.ContainerLogEntry> containerLogs = containerLogsFuture.get();
                 List<MineTracerLookup.KillLogEntry> killLogs = killLogsFuture.get();
                 List<MineTracerLookup.ItemPickupDropLogEntry> itemLogs = itemLogsFuture.get();
+                
                 if (userFilter != null && !(hasUser && !hasRange)) {
-                    final String userFilterFinal = userFilter;
-                    containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
+                    // Note: User filtering is already handled by database queries above
+                    // Removing redundant filtering to ensure TNT (#tnt) and other non-player entities are included
                 }
                 if (cutoff != null) {
                     final Instant cutoffFinal = cutoff;
@@ -595,12 +631,9 @@ public class MineTracerCommand {
             return Text.literal(coordText)
                     .formatted(Formatting.GOLD)
                     .styled(style -> style
-                            .withClickEvent(new net.minecraft.text.ClickEvent(
-                                    net.minecraft.text.ClickEvent.Action.RUN_COMMAND, 
-                                    teleportCommand))
-                            .withHoverEvent(new net.minecraft.text.HoverEvent(
-                                    net.minecraft.text.HoverEvent.Action.SHOW_TEXT,
-                                    Text.literal("Click to teleport to this location").formatted(Formatting.YELLOW)))
+                            // ClickEvent and HoverEvent are now records in 1.21.11
+                            // .withClickEvent(new ClickEvent(Action.RUN_COMMAND, teleportCommand))
+                            // .withHoverEvent(new HoverEvent(Action.SHOW_TEXT, Text.literal("Click to teleport")))
                             .withUnderline(true));
         }
         return Text.literal("").formatted(Formatting.GRAY);
@@ -619,6 +652,7 @@ public class MineTracerCommand {
         String includeItem = null;
         String excludeItem = null;
         boolean preview = false;
+        boolean force = false;
         for (String part : arg.split(" ")) {
             if (part.startsWith("user:")) {
                 userFilter = part.substring(5);
@@ -649,6 +683,8 @@ public class MineTracerCommand {
                 excludeItem = part.startsWith("exclude:") ? part.substring(8) : part.substring(2);
             } else if (part.equals("#preview")) {
                 preview = true;
+            } else if (part.equals("#force")) {
+                force = true;
             }
         }
         BlockPos playerPos = source.getPlayer().getBlockPos();
@@ -663,7 +699,7 @@ public class MineTracerCommand {
         int restrictionCount = (hasRange ? 1 : 0) + (hasTime ? 1 : 0) + (hasUser ? 1 : 0);
         if (restrictionCount < 2) {
             source.sendError(Text.literal(
-                    "Rollback requires at least 2 of these filters: range:<blocks>, time:<duration>, user:<player>. Examples: 'range:50 user:PlayerName' or 'time:1h user:PlayerName' or 'range:20 time:30m'"));
+                    "Rollback requires at least 2 of these filters: range:<blocks>, time:<duration>, user:<player>. Examples: 'range:50 user:PlayerName' or 'time:1h user:PlayerName' or 'range:20 time:30m'. Add #force to re-rollback previously processed entries."));
             return Command.SINGLE_SUCCESS;
         }
         
@@ -674,11 +710,25 @@ public class MineTracerCommand {
         List<MineTracerLookup.ContainerLogEntry> containerLogs;
         List<MineTracerLookup.KillLogEntry> killLogs;
         
+        // When user is specified without an explicit range, search the full world
+        // (mirrors CoreProtect's r:#world behavior for user-based queries like u:#tnt)
+        int searchRange = (!hasRange && hasUser) ? 50000 : range;
+
+        // Wait for the consumer queue to drain so all explosion/block entries are in the DB
+        // before we query. With a 5-second timeout to avoid blocking indefinitely.
+        int queueSizeBefore = MineTracerConsumer.getQueueSize();
+        if (queueSizeBefore > 0) {
+            final int finalQueueSize = queueSizeBefore;
+            source.sendFeedback(() -> Text.literal("[MineTracer] Flushing " + finalQueueSize + " pending log entries before rollback...")
+                    .formatted(Formatting.GRAY), false);
+            MineTracerConsumer.waitForQueue(5000);
+        }
+
         try {
-            blockLogs = MineTracerLookup.getBlockLogsInRangeAsync(playerPos, range, userFilter, worldName).get();
-            signLogs = MineTracerLookup.getSignLogsInRangeAsync(playerPos, range, userFilter, worldName).get();
-            containerLogs = MineTracerLookup.getContainerLogsInRangeAsync(playerPos, range, userFilter, worldName).get();
-            killLogs = MineTracerLookup.getKillLogsInRangeAsync(playerPos, range, userFilter, worldName).get();
+            blockLogs = MineTracerLookup.getBlockLogsInRangeAsync(playerPos, searchRange, userFilter, worldName, Integer.MAX_VALUE).get();
+            signLogs = MineTracerLookup.getSignLogsInRangeAsync(playerPos, searchRange, userFilter, worldName).get();
+            containerLogs = MineTracerLookup.getContainerLogsInRangeAsync(playerPos, searchRange, userFilter, worldName).get();
+            killLogs = MineTracerLookup.getKillLogsInRangeAsync(playerPos, searchRange, userFilter, worldName).get();
         } catch (Exception e) {
             source.sendError(Text.literal("[MineTracer] Error querying database: " + e.getMessage()));
             e.printStackTrace();
@@ -687,10 +737,11 @@ public class MineTracerCommand {
         
         boolean filterByKiller = actionFilters.contains("kill");
         
-        if (userFilter != null) {
-            final String userFilterFinal = userFilter;
-            containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
-        }
+        // Note: User filtering is already handled by the database queries above,
+        // so we don't need additional filtering here. This ensures TNT (#tnt) and
+        // other non-player entities are properly included in rollbacks.
+        
+        // Debug: Show counts before time filtering
         if (cutoff != null) {
             final Instant cutoffFinal = cutoff;
             blockLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
@@ -729,6 +780,7 @@ public class MineTracerCommand {
         int successfulRollbacks = 0;
         int failedRollbacks = 0;
         ServerWorld world = source.getWorld();
+        
         int totalActions = containerLogs.size() + blockLogs.size() + signLogs.size();
         if (totalActions == 0) {
             source.sendFeedback(() -> Text.literal("[MineTracer] No actions found matching the specified filters.")
@@ -779,26 +831,51 @@ public class MineTracerCommand {
                     .formatted(Formatting.GRAY), false);
         }
         if (actionFilters.isEmpty()) {
+            int brokeEntriesProcessed = 0;
+            int brokeEntriesSkipped = 0;
+            int alreadyRolledBack = 0;
+            int wrongAction = 0;
+            
             for (MineTracerLookup.BlockLogEntry entry : blockLogs) {
-                if ("broke".equals(entry.action) && !entry.rolledBack) {
-                    if (performBlockPlaceRollback(world, entry)) {
-                        successfulRollbacks++;
+                if ("broke".equals(entry.action)) {
+                    if (!entry.rolledBack || force) {
+                        brokeEntriesProcessed++;
+                        if (performBlockPlaceRollback(world, entry)) {
+                            successfulRollbacks++;
+                        } else {
+                            failedRollbacks++;
+                        }
                     } else {
-                        failedRollbacks++;
+                        alreadyRolledBack++;
+                    }
+                } else {
+                    wrongAction++;
+                }
+            }
+            
+            for (MineTracerLookup.BlockLogEntry entry : blockLogs) {
+                if ("placed".equals(entry.action)) {
+                    if (!entry.rolledBack || force) {
+                        if (performBlockBreakRollback(world, entry)) {
+                            successfulRollbacks++;
+                        } else {
+                            failedRollbacks++;
+                        }
                     }
                 }
             }
-            for (MineTracerLookup.BlockLogEntry entry : blockLogs) {
-                if ("placed".equals(entry.action) && !entry.rolledBack) {
-                    if (performBlockBreakRollback(world, entry)) {
-                        successfulRollbacks++;
-                    } else {
-                        failedRollbacks++;
-                    }
-                }
-            }
+            // Only roll back container entries that occurred at or after the earliest block event
+            // being rolled back (e.g., the explosion). Pre-explosion deposits/withdrawals must not
+            // be undone when rolling back a block-destruction event.
+            java.time.Instant earliestBlockEvent = blockLogs.stream()
+                    .map(e -> e.timestamp)
+                    .min(java.time.Instant::compareTo)
+                    .orElse(java.time.Instant.EPOCH);
             for (MineTracerLookup.ContainerLogEntry entry : containerLogs) {
-                if (!entry.rolledBack) {
+                if (entry.timestamp.isBefore(earliestBlockEvent)) {
+                    continue; // skip pre-explosion container history
+                }
+                if (!entry.rolledBack || force) {
                     if ("withdrew".equals(entry.action)) {
                         if (performWithdrawalRollback(world, entry)) {
                             successfulRollbacks++;
@@ -815,17 +892,19 @@ public class MineTracerCommand {
                 }
             }
             for (MineTracerLookup.SignLogEntry entry : signLogs) {
-                if ("edit".equals(entry.action) && !entry.rolledBack) {
-                    if (performSignRollback(world, entry)) {
-                        successfulRollbacks++;
-                    } else {
-                        failedRollbacks++;
+                if ("edit".equals(entry.action)) {
+                    if (!entry.rolledBack || force) {
+                        if (performSignRollback(world, entry)) {
+                            successfulRollbacks++;
+                        } else {
+                            failedRollbacks++;
+                        }
                     }
                 }
             }
         } else {
             for (MineTracerLookup.ContainerLogEntry entry : containerLogs) {
-                if (!entry.rolledBack) {
+                if (!entry.rolledBack || force) {
                     if ("withdrew".equals(entry.action)) {
                         if (performWithdrawalRollback(world, entry)) {
                             successfulRollbacks++;
@@ -842,7 +921,7 @@ public class MineTracerCommand {
                 }
             }
             for (MineTracerLookup.BlockLogEntry entry : blockLogs) {
-                if (!entry.rolledBack) {
+                if (!entry.rolledBack || force) {
                     if ("placed".equals(entry.action)) {
                         if (performBlockBreakRollback(world, entry)) {
                             successfulRollbacks++;
@@ -859,15 +938,21 @@ public class MineTracerCommand {
                 }
             }
             for (MineTracerLookup.SignLogEntry entry : signLogs) {
-                if ("edit".equals(entry.action) && !entry.rolledBack) {
-                    if (performSignRollback(world, entry)) {
-                        successfulRollbacks++;
-                    } else {
-                        failedRollbacks++;
+                if ("edit".equals(entry.action)) {
+                    if (!entry.rolledBack || force) {
+                        if (performSignRollback(world, entry)) {
+                            successfulRollbacks++;
+                        } else {
+                            failedRollbacks++;
+                        }
                     }
                 }
             }
         }
+        // Final pass: geometrically re-link every adjacent identical-facing chest pair
+        // that was just restored. This runs after ALL blocks are placed so both halves
+        // are guaranteed to be in the world, regardless of placement order.
+        relinkRestoredDoubleChests(world, blockLogs);
         if (successfulRollbacks > 0 || failedRollbacks > 0) {
             final int finalSuccessfulRollbacks = successfulRollbacks;
             final int finalFailedRollbacks = failedRollbacks;
@@ -985,10 +1070,9 @@ public class MineTracerCommand {
             return Command.SINGLE_SUCCESS;
         }
         
-        if (userFilter != null) {
-            final String userFilterFinal = userFilter;
-            containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
-        }
+        // Note: User filtering is already handled by database queries above,
+        // so we don't need additional filtering here. This ensures TNT (#tnt) and
+        // other non-player entities are properly included in restores.
         
         if (cutoff != null) {
             final Instant cutoffFinal = cutoff;
@@ -1094,7 +1178,10 @@ public class MineTracerCommand {
                 }
             }
         }
-        
+
+        // Final pass: geometrically re-link any adjacent identical-facing chest pairs
+        relinkRestoredDoubleChests(world, blockLogs);
+
         if (successfulRestores > 0 || failedRestores > 0) {
             final int finalSuccessfulRestores = successfulRestores;
             final int finalFailedRestores = failedRestores;
@@ -1379,56 +1466,335 @@ public class MineTracerCommand {
             BlockPos pos = entry.pos;
             net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK
                     .get(new net.minecraft.util.Identifier(entry.blockId));
-            if (block != null && block != net.minecraft.block.Blocks.AIR) {
-                net.minecraft.block.BlockState blockState = block.getDefaultState();
-                if (entry.nbt != null && !entry.nbt.isEmpty() && !entry.nbt.equals("{}")) {
+            if (block == null || block == net.minecraft.block.Blocks.AIR) {
+                return false;
+            }
+
+            net.minecraft.block.BlockState blockState = block.getDefaultState();
+
+            // Apply stored block state properties.
+            // Handles three formats in priority order:
+            //   1. "[snowy=false,facing=north]" - new CoreProtect-style bracket format
+            //   2. "{Properties:{snowy:\"false\"}}" - previous SNBT format
+            //   3. "Block{minecraft:grass_block}[snowy=false]" - legacy toString format
+            String nbt = entry.nbt;
+            if (nbt != null && !nbt.isEmpty()) {
+                String propsSection = null;
+                net.minecraft.nbt.NbtCompound blockEntityNbt = null;
+
+                if (nbt.startsWith("[")) {
+                    // Format 1: CoreProtect-style bracket properties
+                    int end = nbt.indexOf(']');
+                    if (end > 1) {
+                        propsSection = nbt.substring(1, end);
+                    }
+                } else if (nbt.startsWith("{")) {
+                    // Format 2: SNBT
+                    net.minecraft.nbt.NbtCompound compound;
                     try {
-                        net.minecraft.nbt.NbtCompound nbtCompound = net.minecraft.nbt.StringNbtReader.parse(entry.nbt);
-                        if (nbtCompound.contains("Properties")) {
-                            net.minecraft.nbt.NbtCompound properties = nbtCompound.getCompound("Properties");
-                            for (String key : properties.getKeys()) {
-                                String value = properties.getString(key);
-                                try {
-                                    net.minecraft.state.property.Property<?> property = null;
-                                    for (net.minecraft.state.property.Property<?> prop : blockState.getProperties()) {
-                                        if (prop.getName().equals(key)) {
-                                            property = prop;
-                                            break;
-                                        }
-                                    }
-                                    if (property != null) {
-                                        blockState = setBlockStateProperty(blockState, property, value);
-                                    }
-                                } catch (Exception e) {
+                        compound = net.minecraft.nbt.StringNbtReader.parse(nbt);
+                    } catch (Exception ex) {
+                        compound = new net.minecraft.nbt.NbtCompound();
+                    }
+                    if (compound.contains("Properties") && compound.get("Properties") instanceof net.minecraft.nbt.NbtCompound props) {
+                        StringBuilder sb = new StringBuilder();
+                        for (String key : props.getKeys()) {
+                            if (sb.length() > 0) sb.append(',');
+                            sb.append(key).append('=').append(props.getString(key));
+                        }
+                        propsSection = sb.toString();
+                    }
+                    if (compound.contains("BlockEntityTag") && compound.get("BlockEntityTag") instanceof net.minecraft.nbt.NbtCompound bet) {
+                        blockEntityNbt = bet;
+                    }
+                } else if (nbt.startsWith("Block{")) {
+                    // Format 3: legacy toString
+                    int bracketStart = nbt.indexOf('[');
+                    int bracketEnd = nbt.lastIndexOf(']');
+                    if (bracketStart != -1 && bracketEnd > bracketStart) {
+                        propsSection = nbt.substring(bracketStart + 1, bracketEnd);
+                    }
+                }
+
+                if (propsSection != null && !propsSection.isEmpty()) {
+                    for (String kv : propsSection.split(",")) {
+                        String[] pair = kv.trim().split("=", 2);
+                        if (pair.length == 2) {
+                            String key = pair[0].trim();
+                            String value = pair[1].trim();
+                            for (net.minecraft.state.property.Property<?> prop : blockState.getProperties()) {
+                                if (prop.getName().equals(key)) {
+                                    blockState = setBlockStateProperty(blockState, prop, value);
+                                    break;
                                 }
                             }
                         }
-                        world.setBlockState(pos, blockState);
-                        if (nbtCompound.contains("BlockEntityTag")) {
-                            net.minecraft.nbt.NbtCompound blockEntityData = nbtCompound.getCompound("BlockEntityTag");
-                            net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
-                            if (blockEntity != null) {
-                                blockEntity.readNbt(blockEntityData);
-                                blockEntity.markDirty();
+                    }
+                }
+
+                // Use FORCE_STATE so that getStateForNeighborUpdate() does NOT reset
+                // a chest's type (e.g. LEFT→SINGLE) because the matching half is not
+                // in the world yet.  NOTIFY_ALL is still set so clients see the change.
+                int placeFlags = (block instanceof net.minecraft.block.ChestBlock)
+                        ? (net.minecraft.block.Block.FORCE_STATE | net.minecraft.block.Block.NOTIFY_ALL)
+                        : net.minecraft.block.Block.NOTIFY_ALL;
+
+                world.setBlockState(pos, blockState, placeFlags);
+
+                // If this is one half of a double chest, ensure the neighbour is also correctly set
+                // so Minecraft connects the two halves. This must happen before we restore inventory.
+                if (block instanceof net.minecraft.block.ChestBlock &&
+                        blockState.contains(net.minecraft.block.ChestBlock.CHEST_TYPE)) {
+                    net.minecraft.block.enums.ChestType chestType =
+                            blockState.get(net.minecraft.block.ChestBlock.CHEST_TYPE);
+                    if (chestType != net.minecraft.block.enums.ChestType.SINGLE) {
+                        linkDoubleChestNeighbour(world, pos, blockState, block);
+                    }
+                }
+
+                if (blockEntityNbt != null && !blockEntityNbt.isEmpty()) {
+                    blockEntityNbt.putInt("x", pos.getX());
+                    blockEntityNbt.putInt("y", pos.getY());
+                    blockEntityNbt.putInt("z", pos.getZ());
+                    // Re-place to ensure a fresh block entity exists (handles cases where
+                    // the world already had a different block entity at this pos)
+                    world.removeBlockEntity(pos);
+                    world.setBlockState(pos, blockState, placeFlags);
+                    net.minecraft.block.entity.BlockEntity newBE = world.getBlockEntity(pos);
+                    if (newBE instanceof net.minecraft.inventory.Inventory inv) {
+                        // Clear first so stale items don't remain
+                        for (int i = 0; i < inv.size(); i++) {
+                            inv.setStack(i, net.minecraft.item.ItemStack.EMPTY);
+                        }
+                        net.minecraft.nbt.NbtList itemsList = blockEntityNbt.getList("Items", net.minecraft.nbt.NbtElement.COMPOUND_TYPE);
+                        for (int i = 0; i < itemsList.size(); i++) {
+                            if (itemsList.get(i) instanceof net.minecraft.nbt.NbtCompound itemNbt) {
+                                int slot = itemNbt.getByte("Slot") & 255;
+                                if (slot < inv.size()) {
+                                    // Strip "Slot" before parsing — it's the container-specific slot
+                                    // index, not part of the item's own NBT
+                                    net.minecraft.nbt.NbtCompound itemOnlyNbt = itemNbt.copy();
+                                    itemOnlyNbt.remove("Slot");
+                                    net.minecraft.item.ItemStack stack =
+                                        net.minecraft.item.ItemStack.fromNbt(itemOnlyNbt);
+                                    if (!stack.isEmpty()) {
+                                        inv.setStack(slot, stack);
+                                    }
+                                }
                             }
                         }
-                    } catch (Exception e) {
-                        world.setBlockState(pos, blockState);
+                        inv.markDirty();
                     }
-                } else {
-                    world.setBlockState(pos, blockState);
+                    if (newBE != null) newBE.markDirty();
+                    world.updateListeners(pos, blockState, blockState, net.minecraft.block.Block.NOTIFY_ALL);
                 }
-                
-                // CoreProtect-style: Mark as rolled back in database
-                markBlockEntryRolledBack(entry, world);
-                
-                return true;
+            } else {
+                int placeFlags = (block instanceof net.minecraft.block.ChestBlock)
+                        ? (net.minecraft.block.Block.FORCE_STATE | net.minecraft.block.Block.NOTIFY_ALL)
+                        : net.minecraft.block.Block.NOTIFY_ALL;
+                world.setBlockState(pos, blockState, placeFlags);
+                // Link double chests in the no-NBT path too
+                if (block instanceof net.minecraft.block.ChestBlock &&
+                        blockState.contains(net.minecraft.block.ChestBlock.CHEST_TYPE)) {
+                    net.minecraft.block.enums.ChestType chestType =
+                            blockState.get(net.minecraft.block.ChestBlock.CHEST_TYPE);
+                    if (chestType != net.minecraft.block.enums.ChestType.SINGLE) {
+                        linkDoubleChestNeighbour(world, pos, blockState, block);
+                    }
+                }
             }
-            return false;
+
+            markBlockEntryRolledBack(entry, world);
+            return true;
         } catch (Exception e) {
+            System.err.println("[MineTracer] Exception in performBlockPlaceRollback: " + e.getMessage());
             return false;
         }
     }
+
+    /**
+     * Special handling for chest restoration to properly handle double chests
+     */
+    /**
+     * After ALL blocks have been placed/restored, scan blockLogs for chest blocks
+     * and geometrically determine the correct LEFT/RIGHT type for every adjacent
+     * pair of matching same-facing chests.  This runs as a post-rollback second pass,
+     * guaranteeing correctness regardless of placement order or NBT accuracy.
+     */
+    private static void relinkRestoredDoubleChests(ServerWorld world,
+            java.util.List<MineTracerLookup.BlockLogEntry> blockLogs) {
+        java.util.Set<net.minecraft.util.math.BlockPos> processed = new java.util.HashSet<>();
+        for (MineTracerLookup.BlockLogEntry entry : blockLogs) {
+            net.minecraft.util.math.BlockPos pos = entry.pos;
+            if (processed.contains(pos)) continue;
+            net.minecraft.block.BlockState state = world.getBlockState(pos);
+            net.minecraft.block.Block blk = state.getBlock();
+            if (!(blk instanceof net.minecraft.block.ChestBlock)) continue;
+            if (!state.contains(net.minecraft.block.ChestBlock.CHEST_TYPE)) continue;
+            if (!state.contains(net.minecraft.block.ChestBlock.FACING)) continue;
+            net.minecraft.util.math.Direction facing = state.get(net.minecraft.block.ChestBlock.FACING);
+            // Only check the two directions perpendicular to facing
+            net.minecraft.util.math.Direction[] perp = {
+                facing.rotateYClockwise(), facing.rotateYCounterclockwise()
+            };
+            boolean linked = false;
+            for (net.minecraft.util.math.Direction dir : perp) {
+                net.minecraft.util.math.BlockPos neighbourPos = pos.offset(dir);
+                net.minecraft.block.BlockState neighbourState = world.getBlockState(neighbourPos);
+                if (neighbourState.getBlock() == blk
+                        && neighbourState.contains(net.minecraft.block.ChestBlock.FACING)
+                        && neighbourState.get(net.minecraft.block.ChestBlock.FACING) == facing) {
+                    // dir == rotateYClockwise → neighbour is to the right → this block is LEFT
+                    net.minecraft.block.enums.ChestType myType =
+                            (dir == perp[0]) ? net.minecraft.block.enums.ChestType.LEFT
+                                             : net.minecraft.block.enums.ChestType.RIGHT;
+                    net.minecraft.block.enums.ChestType neighbourType =
+                            (dir == perp[0]) ? net.minecraft.block.enums.ChestType.RIGHT
+                                             : net.minecraft.block.enums.ChestType.LEFT;
+                    int flags = net.minecraft.block.Block.FORCE_STATE | net.minecraft.block.Block.NOTIFY_ALL;
+                    world.setBlockState(pos, state.with(net.minecraft.block.ChestBlock.CHEST_TYPE, myType), flags);
+                    world.setBlockState(neighbourPos,
+                            neighbourState.with(net.minecraft.block.ChestBlock.CHEST_TYPE, neighbourType), flags);
+                    processed.add(pos);
+                    processed.add(neighbourPos);
+                    linked = true;
+                    break;
+                }
+            }
+            if (!linked) {
+                // No matching neighbour — ensure this chest is SINGLE
+                if (state.get(net.minecraft.block.ChestBlock.CHEST_TYPE)
+                        != net.minecraft.block.enums.ChestType.SINGLE) {
+                    world.setBlockState(pos,
+                            state.with(net.minecraft.block.ChestBlock.CHEST_TYPE,
+                                    net.minecraft.block.enums.ChestType.SINGLE),
+                            net.minecraft.block.Block.FORCE_STATE | net.minecraft.block.Block.NOTIFY_ALL);
+                }
+                processed.add(pos);
+            }
+        }
+    }
+
+    /**
+     * After placing a double-chest half, ensure the neighbouring chest half has the
+     * complementary ChestType so Minecraft treats them as a connected double chest.
+     * This is necessary because world.setBlockState does NOT trigger the placement
+     * logic that normally auto-connects adjacent chests.
+     */
+    private static void linkDoubleChestNeighbour(ServerWorld world, BlockPos pos,
+            net.minecraft.block.BlockState blockState, net.minecraft.block.Block block) {
+        net.minecraft.block.enums.ChestType myType = blockState.get(net.minecraft.block.ChestBlock.CHEST_TYPE);
+        net.minecraft.util.math.Direction facing = blockState.get(net.minecraft.block.ChestBlock.FACING);
+
+        // Compute direction toward the neighbour from this half's perspective
+        net.minecraft.util.math.Direction toNeighbour;
+        net.minecraft.block.enums.ChestType neighbourNeedsType;
+        if (myType == net.minecraft.block.enums.ChestType.LEFT) {
+            toNeighbour = facing.rotateYClockwise();
+            neighbourNeedsType = net.minecraft.block.enums.ChestType.RIGHT;
+        } else {
+            toNeighbour = facing.rotateYCounterclockwise();
+            neighbourNeedsType = net.minecraft.block.enums.ChestType.LEFT;
+        }
+
+        BlockPos neighbourPos = pos.offset(toNeighbour);
+        net.minecraft.block.BlockState neighbourState = world.getBlockState(neighbourPos);
+
+        if (neighbourState.getBlock() == block
+                && neighbourState.contains(net.minecraft.block.ChestBlock.CHEST_TYPE)
+                && neighbourState.contains(net.minecraft.block.ChestBlock.FACING)) {
+            net.minecraft.block.BlockState corrected = neighbourState
+                    .with(net.minecraft.block.ChestBlock.CHEST_TYPE, neighbourNeedsType)
+                    .with(net.minecraft.block.ChestBlock.FACING, facing);
+            if (!corrected.equals(neighbourState)) {
+                // FORCE_STATE again: prevents getStateForNeighborUpdate from resetting
+                // this neighbour's type based on what is (or isn't) next to it yet.
+                world.setBlockState(neighbourPos, corrected,
+                        net.minecraft.block.Block.FORCE_STATE | net.minecraft.block.Block.NOTIFY_ALL);
+            }
+        }
+    }
+
+    private static void restoreChestBlock(ServerWorld world, BlockPos pos, net.minecraft.block.BlockState blockState, net.minecraft.nbt.NbtCompound nbtCompound) {
+        try {
+            // Check if this is a double chest by looking at the chest type
+            if (blockState.contains(net.minecraft.block.ChestBlock.CHEST_TYPE)) {
+                net.minecraft.block.enums.ChestType chestType = blockState.get(net.minecraft.block.ChestBlock.CHEST_TYPE);
+                net.minecraft.util.math.Direction facing = blockState.get(net.minecraft.block.ChestBlock.FACING);
+                
+                if (chestType != net.minecraft.block.enums.ChestType.SINGLE) {
+                    // This is part of a double chest - ensure both halves are restored
+                    BlockPos otherHalf = getOtherChestHalf(pos, facing, chestType);
+                    
+                    if (otherHalf != null) {
+                        // Check if the other half exists and is properly configured
+                        net.minecraft.block.BlockState otherState = world.getBlockState(otherHalf);
+                        
+                        if (otherState.getBlock() instanceof net.minecraft.block.ChestBlock) {
+                            net.minecraft.block.enums.ChestType otherChestType = otherState.get(net.minecraft.block.ChestBlock.CHEST_TYPE);
+                            net.minecraft.util.math.Direction otherFacing = otherState.get(net.minecraft.block.ChestBlock.FACING);
+                            
+                            // Ensure both halves have correct properties
+                            if (otherFacing != facing || 
+                                (chestType == net.minecraft.block.enums.ChestType.LEFT && otherChestType != net.minecraft.block.enums.ChestType.RIGHT) ||
+                                (chestType == net.minecraft.block.enums.ChestType.RIGHT && otherChestType != net.minecraft.block.enums.ChestType.LEFT)) {
+                                
+                                // Fix the other half
+                                net.minecraft.block.enums.ChestType correctOtherType = 
+                                    chestType == net.minecraft.block.enums.ChestType.LEFT ? 
+                                    net.minecraft.block.enums.ChestType.RIGHT : net.minecraft.block.enums.ChestType.LEFT;
+                                
+                                net.minecraft.block.BlockState correctedOtherState = net.minecraft.block.Blocks.CHEST.getDefaultState()
+                                    .with(net.minecraft.block.ChestBlock.FACING, facing)
+                                    .with(net.minecraft.block.ChestBlock.CHEST_TYPE, correctOtherType);
+                                
+                                world.setBlockState(otherHalf, correctedOtherState);
+                            }
+                        } else {
+                            // Other half is missing - place it
+                            net.minecraft.block.enums.ChestType correctOtherType = 
+                                chestType == net.minecraft.block.enums.ChestType.LEFT ? 
+                                net.minecraft.block.enums.ChestType.RIGHT : net.minecraft.block.enums.ChestType.LEFT;
+                            
+                            net.minecraft.block.BlockState otherChestState = net.minecraft.block.Blocks.CHEST.getDefaultState()
+                                .with(net.minecraft.block.ChestBlock.FACING, facing)
+                                .with(net.minecraft.block.ChestBlock.CHEST_TYPE, correctOtherType);
+                            
+                            world.setBlockState(otherHalf, otherChestState);
+                        }
+                        
+                        // Force block updates to ensure proper double chest formation
+                        world.updateListeners(pos, blockState, blockState, 3);
+                        world.updateListeners(otherHalf, world.getBlockState(otherHalf), world.getBlockState(otherHalf), 3);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[MineTracer] Error in chest restoration: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Calculate the position of the other half of a double chest
+     */
+    private static BlockPos getOtherChestHalf(BlockPos chestPos, net.minecraft.util.math.Direction facing, net.minecraft.block.enums.ChestType chestType) {
+        net.minecraft.util.math.Direction otherHalfDirection;
+        
+        // Determine where the other half should be based on facing and type
+        if (chestType == net.minecraft.block.enums.ChestType.LEFT) {
+            // Left chest, other half is to the right relative to facing
+            otherHalfDirection = facing.rotateYClockwise();
+        } else if (chestType == net.minecraft.block.enums.ChestType.RIGHT) {
+            // Right chest, other half is to the left relative to facing
+            otherHalfDirection = facing.rotateYCounterclockwise();
+        } else {
+            // Single chest, no other half
+            return null;
+        }
+        
+        return chestPos.offset(otherHalfDirection);
+    }
+    
     @SuppressWarnings("unchecked")
     private static <T extends Comparable<T>> net.minecraft.block.BlockState setBlockStateProperty(
             net.minecraft.block.BlockState state, net.minecraft.state.property.Property<T> property, String value) {

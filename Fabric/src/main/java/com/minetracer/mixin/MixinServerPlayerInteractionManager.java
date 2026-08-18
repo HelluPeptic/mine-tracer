@@ -86,6 +86,7 @@ public class MixinServerPlayerInteractionManager {
                     OptimizedLogStorage.logBlockAction("placed", player, placedPos, blockId.toString(), nbt);
                 }
             } catch (Exception e) {
+                System.err.println("[MineTracer] Failed to log block place: " + e.getMessage());
             }
         }, OptimizedLogStorage.getAsyncExecutor());
     }
@@ -151,6 +152,7 @@ public class MixinServerPlayerInteractionManager {
                     OptimizedLogStorage.logBlockAction("broke", player, pos, blockId.toString(), nbt);
                 }
             } catch (Exception e) {
+                System.err.println("[MineTracer] Failed to log block break: " + e.getMessage());
             }
         }, OptimizedLogStorage.getAsyncExecutor());
     }
