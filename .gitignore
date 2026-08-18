@@ -22,6 +22,9 @@ build
 eclipse
 run
 CoreProtect-master
+*.log
+build_log.txt
+build-output.log
 
 # Keep git filter scripts
 !.git-filters/

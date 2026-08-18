@@ -1,40 +1,27 @@
 package com.minetracer.features.minetracer;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
-import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.ActionResult;
 import net.minecraft.util.math.BlockPos;
 public class OptimizedChestEventListener {
     public static void register() {
-        UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> {
-            java.util.concurrent.CompletableFuture.runAsync(() -> {
-                BlockPos pos = hitResult.getBlockPos();
-                Block block = world.getBlockState(pos).getBlock();
-                if (isTrackedContainer(block)) {
-                }
-            });
-            return ActionResult.PASS;
-        });
         PlayerBlockBreakEvents.BEFORE.register((world, player, pos, state, blockEntity) -> {
             Block block = state.getBlock();
             if (isTrackedContainer(block) && blockEntity instanceof Inventory inv) {
-                
+
                 java.util.concurrent.CompletableFuture.runAsync(() -> {
                     // Use canonical position for consistent double chest handling
                     BlockPos canonicalPos = ContainerPositionTracker.getContainerPosition(world, pos);
                     BlockPos entityPos = canonicalPos != null ? canonicalPos : blockEntity.getPos();
-                    
-                    java.util.stream.IntStream.range(0, inv.size())
-                            .parallel()
-                            .forEach(i -> {
-                                ItemStack stack = inv.getStack(i);
-                                if (!stack.isEmpty()) {
-                                    NewOptimizedLogStorage.logContainerAction("withdrew", player, entityPos, stack);
-                                }
-                            });
+
+                    for (int i = 0; i < inv.size(); i++) {
+                        ItemStack stack = inv.getStack(i);
+                        if (!stack.isEmpty()) {
+                            NewOptimizedLogStorage.logContainerAction("withdrew", player, entityPos, stack);
+                        }
+                    }
                 });
             }
             return true;

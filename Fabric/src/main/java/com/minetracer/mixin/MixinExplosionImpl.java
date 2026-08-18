@@ -48,7 +48,8 @@ public class MixinExplosionImpl {
                 }
             }
         } catch (Exception e) {
-            // Never crash the server
+            // Never crash the server, but surface the failure so it isn't silently lost
+            System.err.println("[MineTracer] Failed to log explosion block destruction: " + e.getMessage());
         }
     }
 }

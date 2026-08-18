@@ -20,7 +20,7 @@ public class ItemPickupDropEventListener {
         if (player == null || itemEntity == null || itemEntity.getStack().isEmpty()) {
             return;
         }
-        ItemStack stack = itemEntity.getStack();
+        ItemStack stack = itemEntity.getStack().copy();
         BlockPos pos = itemEntity.getBlockPos();
         String world = ((com.minetracer.mixin.EntityAccessor)player).getWorld().getRegistryKey().getValue().toString();
         NewOptimizedLogStorage.logItemPickupDropAction(DROP_ACTION, player, pos, stack, world);
