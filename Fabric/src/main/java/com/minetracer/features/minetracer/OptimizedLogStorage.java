@@ -1,11 +1,6 @@
 package com.minetracer.features.minetracer;
 import com.minetracer.features.minetracer.util.NbtCompatHelper;
 import com.minetracer.features.minetracer.NewOptimizedLogStorage;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.server.network.ServerPlayerEntity;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +19,10 @@ import com.google.gson.stream.JsonWriter;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -412,7 +411,7 @@ public class OptimizedLogStorage {
                             BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]),
                                     Integer.parseInt(posParts[2]));
                             try {
-                                net.minecraft.nbt.NbtCompound nbt = NbtCompatHelper.parseNbtString((String) obj.get("itemNbt"));
+                                net.minecraft.nbt.CompoundTag nbt = NbtCompatHelper.parseNbtString((String) obj.get("itemNbt"));
                                 ItemStack stack = NbtCompatHelper.itemStackFromNbt(nbt, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
                                 LogEntry entry = new LogEntry((String) obj.get("action"),
                                         (String) obj.get("playerName"), pos, stack,
@@ -474,7 +473,7 @@ public class OptimizedLogStorage {
                                 String[] posParts = ((String) obj.get("pos")).split(",");
                                 BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]),
                                         Integer.parseInt(posParts[2]));
-                                net.minecraft.nbt.NbtCompound nbt = NbtCompatHelper.parseNbtString((String) obj.get("itemNbt"));
+                                net.minecraft.nbt.CompoundTag nbt = NbtCompatHelper.parseNbtString((String) obj.get("itemNbt"));
                                 ItemStack stack = NbtCompatHelper.itemStackFromNbt(nbt, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
                                 ItemPickupDropLogEntry entry = new ItemPickupDropLogEntry((String) obj.get("action"),
                                         (String) obj.get("playerName"), pos, stack, (String) obj.get("world"),
@@ -506,7 +505,7 @@ public class OptimizedLogStorage {
             }
         }, queryExecutor);
     }
-    public static void logContainerAction(String action, PlayerEntity player, BlockPos pos, ItemStack stack) {
+    public static void logContainerAction(String action, Player player, BlockPos pos, ItemStack stack) {
         // Delegate to new optimized database storage system (CoreProtect style)
         NewOptimizedLogStorage.logContainerAction(action, player, pos, stack);
         
@@ -530,9 +529,9 @@ public class OptimizedLogStorage {
             invalidateQueryCache();
         });
     }
-    public static void logBlockAction(String action, PlayerEntity player, BlockPos pos, String blockId, String nbt) {
+    public static void logBlockAction(String action, Player player, BlockPos pos, String blockId, String nbt) {
         // Delegate to new optimized database storage system (CoreProtect style)
-        if (player instanceof net.minecraft.server.network.ServerPlayerEntity) {
+        if (player instanceof net.minecraft.server.level.ServerPlayer) {
             NewOptimizedLogStorage.logBlockAction(action, player, pos, blockId, nbt);
         }
         
@@ -551,7 +550,7 @@ public class OptimizedLogStorage {
         indexBlockLogEntryAsync(entry);
         invalidateQueryCache();
     }
-    public static void logSignAction(String action, PlayerEntity player, BlockPos pos, String text, String nbt) {
+    public static void logSignAction(String action, Player player, BlockPos pos, String text, String nbt) {
         String playerName = player != null ? player.getName().getString() : "unknown";
         SignLogEntry entry = new SignLogEntry(action, playerName, pos, text, nbt, Instant.now());
         dataLock.writeLock().lock();
@@ -580,14 +579,14 @@ public class OptimizedLogStorage {
         indexKillLogEntryAsync(entry);
         invalidateQueryCache();
     }
-    public static void logItemPickupDropAction(String action, PlayerEntity player, BlockPos pos, ItemStack stack, String world) {
+    public static void logItemPickupDropAction(String action, Player player, BlockPos pos, ItemStack stack, String world) {
         if (stack.isEmpty() || player == null) {
             return;
         }
         
         // Delegate to new optimized database storage system (CoreProtect style)
-        if (player instanceof net.minecraft.server.network.ServerPlayerEntity) {
-            NewOptimizedLogStorage.logItemPickupDropAction(action, (net.minecraft.server.network.ServerPlayerEntity) player, pos, stack, world);
+        if (player instanceof net.minecraft.server.level.ServerPlayer) {
+            NewOptimizedLogStorage.logItemPickupDropAction(action, (net.minecraft.server.level.ServerPlayer) player, pos, stack, world);
         }
         
         // Keep old logging for compatibility with lookup system until we migrate fully
@@ -604,8 +603,8 @@ public class OptimizedLogStorage {
             invalidateQueryCache();
         });
     }
-    public static void logInventoryAction(String action, PlayerEntity player, ItemStack stack) {
-        logContainerAction(action, player, BlockPos.ORIGIN, stack);
+    public static void logInventoryAction(String action, Player player, ItemStack stack) {
+        logContainerAction(action, player, BlockPos.ZERO, stack);
     }
     public static CompletableFuture<List<BlockLogEntry>> getBlockLogsInRangeAsync(BlockPos center, int range,
             String userFilter) {
@@ -630,7 +629,7 @@ public class OptimizedLogStorage {
                         if (chunkEntries != null) {
                             for (BlockLogEntry entry : chunkEntries) {
                                 if ((userFilter == null || entry.playerName.equalsIgnoreCase(userFilter)) &&
-                                        entry.pos.getSquaredDistance(center.getX(), center.getY(),
+                                        entry.pos.distToLowCornerSqr(center.getX(), center.getY(),
                                                 center.getZ()) <= r2) {
                                     result.add(entry);
                                 }
@@ -668,7 +667,7 @@ public class OptimizedLogStorage {
                         if (chunkEntries != null) {
                             for (SignLogEntry entry : chunkEntries) {
                                 if ((userFilter == null || entry.playerName.equalsIgnoreCase(userFilter)) &&
-                                        entry.pos.getSquaredDistance(center.getX(), center.getY(),
+                                        entry.pos.distToLowCornerSqr(center.getX(), center.getY(),
                                                 center.getZ()) <= r2) {
                                     result.add(entry);
                                 }
@@ -713,7 +712,7 @@ public class OptimizedLogStorage {
                                         userMatch = entry.victimName.equalsIgnoreCase(userFilter);
                                     }
                                 }
-                                if (userMatch && entry.pos.getSquaredDistance(center.getX(), center.getY(),
+                                if (userMatch && entry.pos.distToLowCornerSqr(center.getX(), center.getY(),
                                         center.getZ()) <= r2) {
                                     result.add(entry);
                                 }
@@ -749,7 +748,7 @@ public class OptimizedLogStorage {
                         List<LogEntry> chunkEntries = chunkContainerLogs.get(chunkKey);
                         if (chunkEntries != null) {
                             for (LogEntry entry : chunkEntries) {
-                                if (entry.pos.getSquaredDistance(center.getX(), center.getY(), center.getZ()) <= r2) {
+                                if (entry.pos.distToLowCornerSqr(center.getX(), center.getY(), center.getZ()) <= r2) {
                                     result.add(entry);
                                 }
                             }
@@ -929,7 +928,7 @@ public class OptimizedLogStorage {
                                 boolean userMatch = (userFilter == null || userFilter.isEmpty()) || 
                                                     entry.playerName.equalsIgnoreCase(userFilter);
                                 if (userMatch) {
-                                    double distance = entry.pos.getSquaredDistance(center);
+                                    double distance = entry.pos.distSqr(center);
                                     if (distance <= r2) {
                                         result.add(entry);
                                     }
@@ -1047,21 +1046,21 @@ public class OptimizedLogStorage {
         }
     }
     private static final java.util.Set<java.util.UUID> inspectorPlayers = new java.util.HashSet<>();
-    public static void setInspectorMode(ServerPlayerEntity player, boolean enabled) {
+    public static void setInspectorMode(ServerPlayer player, boolean enabled) {
         synchronized (inspectorPlayers) {
             if (enabled) {
-                inspectorPlayers.add(player.getUuid());
+                inspectorPlayers.add(player.getUUID());
             } else {
-                inspectorPlayers.remove(player.getUuid());
+                inspectorPlayers.remove(player.getUUID());
             }
         }
     }
-    public static boolean isInspectorMode(ServerPlayerEntity player) {
+    public static boolean isInspectorMode(ServerPlayer player) {
         synchronized (inspectorPlayers) {
-            return inspectorPlayers.contains(player.getUuid());
+            return inspectorPlayers.contains(player.getUUID());
         }
     }
-    public static void toggleInspectorMode(ServerPlayerEntity player) {
+    public static void toggleInspectorMode(ServerPlayer player) {
         setInspectorMode(player, !isInspectorMode(player));
     }
     public static ExecutorService getAsyncExecutor() {

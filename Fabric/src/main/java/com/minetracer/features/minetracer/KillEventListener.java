@@ -1,22 +1,21 @@
 package com.minetracer.features.minetracer;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityCombatEvents;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 public class KillEventListener {
     public static void register() {
-        ServerEntityCombatEvents.AFTER_KILLED_OTHER_ENTITY.register((ServerWorld world, Entity entity, LivingEntity killedEntity, DamageSource damageSource) -> {
-            if (!(entity instanceof PlayerEntity)) {
+        ServerEntityCombatEvents.AFTER_KILLED_OTHER_ENTITY.register((ServerLevel world, Entity entity, LivingEntity killedEntity, DamageSource damageSource) -> {
+            if (!(entity instanceof Player)) {
                 return;
             }
             String killerName = entity.getName().getString();
             String victimName = killedEntity.getName().getString();
-            BlockPos pos = killedEntity.getBlockPos();
-            String worldName = world.getRegistryKey().getValue().toString();
+            BlockPos pos = killedEntity.blockPosition();
+            String worldName = world.dimension().identifier().toString();
             NewOptimizedLogStorage.logKillAction(killerName, victimName, pos, worldName);
         });
     }

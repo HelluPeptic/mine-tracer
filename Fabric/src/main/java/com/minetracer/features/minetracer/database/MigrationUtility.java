@@ -9,13 +9,11 @@ import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-
+import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.item.ItemStack;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.StringNbtReader;
-import net.minecraft.util.math.BlockPos;
 
 /**
  * Migration utility to convert existing JSON logs to database format
@@ -120,7 +118,7 @@ public class MigrationUtility {
                     BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]), Integer.parseInt(posParts[2]));
                     
                     // Parse ItemStack from NBT
-                    NbtCompound nbt = NbtCompatHelper.parseNbtString((String) obj.get("itemNbt"));
+                    CompoundTag nbt = NbtCompatHelper.parseNbtString((String) obj.get("itemNbt"));
                     ItemStack stack = NbtCompatHelper.itemStackFromNbt(nbt, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
                     
                     // Get user and world IDs (create if needed)
@@ -137,7 +135,7 @@ public class MigrationUtility {
                     stmt.setInt(4, pos.getX());
                     stmt.setInt(5, pos.getY());
                     stmt.setInt(6, pos.getZ());
-                    stmt.setInt(7, net.minecraft.registry.Registries.ITEM.getRawId(stack.getItem()));
+                    stmt.setInt(7, net.minecraft.core.registries.BuiltInRegistries.ITEM.getId(stack.getItem()));
                     stmt.setBytes(8, nbt.toString().getBytes(StandardCharsets.UTF_8));
                     stmt.setInt(9, stack.getCount());
                     stmt.setBytes(10, null);

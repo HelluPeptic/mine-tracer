@@ -1,22 +1,21 @@
 package com.minetracer.mixin;
 import com.minetracer.features.minetracer.OptimizedLogStorage;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.network.ServerPlayerInteractionManager;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.Identifier;
-import net.minecraft.registry.Registries;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.SignBlockEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
 import com.minetracer.mixin.ServerPlayerInteractionManagerAccessor;
 import com.google.gson.Gson;
 import java.util.concurrent.CompletableFuture;
-@Mixin(ServerPlayerInteractionManager.class)
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerPlayerGameMode;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.SignBlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+@Mixin(ServerPlayerGameMode.class)
 public class MixinServerPlayerInteractionManager {
     private static final Gson GSON = new Gson();
     @org.spongepowered.asm.mixin.Unique
@@ -25,24 +24,24 @@ public class MixinServerPlayerInteractionManager {
     private BlockState minetracer$prevBrokenState = null;
     @org.spongepowered.asm.mixin.Unique
     private BlockEntity minetracer$prevBrokenBlockEntity = null;
-    @Inject(method = "interactBlock", at = @At("HEAD"))
-    private void minetracer$cacheBlockPlaceState(ServerPlayerEntity player, net.minecraft.world.World world,
-            net.minecraft.item.ItemStack stack, net.minecraft.util.Hand hand,
-            net.minecraft.util.hit.BlockHitResult hitResult,
-            CallbackInfoReturnable<net.minecraft.util.ActionResult> cir) {
-        BlockPos placedPos = hitResult.getBlockPos().offset(hitResult.getSide());
+    @Inject(method = "useItemOn", at = @At("HEAD"))
+    private void minetracer$cacheBlockPlaceState(ServerPlayer player, net.minecraft.world.level.Level world,
+            net.minecraft.world.item.ItemStack stack, net.minecraft.world.InteractionHand hand,
+            net.minecraft.world.phys.BlockHitResult hitResult,
+            CallbackInfoReturnable<net.minecraft.world.InteractionResult> cir) {
+        BlockPos placedPos = hitResult.getBlockPos().relative(hitResult.getDirection());
         this.minetracer$prevPlacedState = world.getBlockState(placedPos);
     }
-    @Inject(method = "interactBlock", at = @At("RETURN"))
-    private void minetracer$logBlockPlace(ServerPlayerEntity player, net.minecraft.world.World world,
-            net.minecraft.item.ItemStack stack, net.minecraft.util.Hand hand,
-            net.minecraft.util.hit.BlockHitResult hitResult,
-            CallbackInfoReturnable<net.minecraft.util.ActionResult> cir) {
+    @Inject(method = "useItemOn", at = @At("RETURN"))
+    private void minetracer$logBlockPlace(ServerPlayer player, net.minecraft.world.level.Level world,
+            net.minecraft.world.item.ItemStack stack, net.minecraft.world.InteractionHand hand,
+            net.minecraft.world.phys.BlockHitResult hitResult,
+            CallbackInfoReturnable<net.minecraft.world.InteractionResult> cir) {
         if (OptimizedLogStorage.isInspectorMode(player)) {
             // Skip old inspector logic - new CoreProtect-style system handles this via UseBlockCallback
             return;
         }
-        BlockPos placedPos = hitResult.getBlockPos().offset(hitResult.getSide());
+        BlockPos placedPos = hitResult.getBlockPos().relative(hitResult.getDirection());
         BlockState placedState = world.getBlockState(placedPos);
         BlockState prevState = this.minetracer$prevPlacedState;
         this.minetracer$prevPlacedState = null;
@@ -51,27 +50,27 @@ public class MixinServerPlayerInteractionManager {
         }
         CompletableFuture.runAsync(() -> {
             try {
-                Identifier blockId = Registries.BLOCK.getId(placedState.getBlock());
-                net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(placedPos);
+                Identifier blockId = BuiltInRegistries.BLOCK.getKey(placedState.getBlock());
+                net.minecraft.world.level.block.entity.BlockEntity blockEntity = world.getBlockEntity(placedPos);
                 String nbt = null;
                 if (!placedState.getProperties().isEmpty() || blockEntity != null) {
-                    net.minecraft.nbt.NbtCompound fullNbt = new net.minecraft.nbt.NbtCompound();
+                    net.minecraft.nbt.CompoundTag fullNbt = new net.minecraft.nbt.CompoundTag();
                     if (!placedState.getProperties().isEmpty()) {
-                        net.minecraft.nbt.NbtCompound propertiesNbt = new net.minecraft.nbt.NbtCompound();
-                        for (net.minecraft.state.property.Property<?> property : placedState.getProperties()) {
+                        net.minecraft.nbt.CompoundTag propertiesNbt = new net.minecraft.nbt.CompoundTag();
+                        for (net.minecraft.world.level.block.state.properties.Property<?> property : placedState.getProperties()) {
                             String propertyName = property.getName();
-                            String propertyValue = placedState.get(property).toString();
+                            String propertyValue = placedState.getValue(property).toString();
                             propertiesNbt.putString(propertyName, propertyValue);
                         }
                         fullNbt.put("Properties", propertiesNbt);
                     }
                     if (blockEntity != null) {
-                        fullNbt.put("BlockEntityTag", blockEntity.createNbt(world.getRegistryManager()));
+                        fullNbt.put("BlockEntityTag", blockEntity.saveWithoutMetadata(world.registryAccess()));
                     }
                     nbt = fullNbt.toString();
                 }
-                if (blockEntity instanceof net.minecraft.block.entity.SignBlockEntity) {
-                    net.minecraft.block.entity.SignBlockEntity sign = (net.minecraft.block.entity.SignBlockEntity) blockEntity;
+                if (blockEntity instanceof net.minecraft.world.level.block.entity.SignBlockEntity) {
+                    net.minecraft.world.level.block.entity.SignBlockEntity sign = (net.minecraft.world.level.block.entity.SignBlockEntity) blockEntity;
                     String[] lines = new String[4];
                     for (int i = 0; i < 4; i++) {
                         try {
@@ -81,7 +80,7 @@ public class MixinServerPlayerInteractionManager {
                         }
                     }
                     String beforeText = GSON.toJson(lines);
-                    OptimizedLogStorage.logSignAction("placed", player, placedPos, beforeText, sign.createNbt(world.getRegistryManager()).toString());
+                    OptimizedLogStorage.logSignAction("placed", player, placedPos, beforeText, sign.saveWithoutMetadata(world.registryAccess()).toString());
                 } else {
                     OptimizedLogStorage.logBlockAction("placed", player, placedPos, blockId.toString(), nbt);
                 }
@@ -90,16 +89,16 @@ public class MixinServerPlayerInteractionManager {
             }
         }, OptimizedLogStorage.getAsyncExecutor());
     }
-    @Inject(method = "tryBreakBlock", at = @At("HEAD"))
+    @Inject(method = "destroyBlock", at = @At("HEAD"))
     private void minetracer$cacheBlockBreakState(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
-        ServerPlayerEntity player = ((ServerPlayerInteractionManagerAccessor) this).getPlayer();
-        net.minecraft.world.World world = ((com.minetracer.mixin.EntityAccessor)player).getWorld();
+        ServerPlayer player = ((ServerPlayerInteractionManagerAccessor) this).getPlayer();
+        net.minecraft.world.level.Level world = ((com.minetracer.mixin.EntityAccessor)player).getWorld();
         this.minetracer$prevBrokenState = world.getBlockState(pos);
         this.minetracer$prevBrokenBlockEntity = world.getBlockEntity(pos);
     }
-    @Inject(method = "tryBreakBlock", at = @At("RETURN"))
+    @Inject(method = "destroyBlock", at = @At("RETURN"))
     private void minetracer$logBlockBreak(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
-        ServerPlayerEntity player = ((ServerPlayerInteractionManagerAccessor) this).getPlayer();
+        ServerPlayer player = ((ServerPlayerInteractionManagerAccessor) this).getPlayer();
         if (!cir.getReturnValue()) {
             this.minetracer$prevBrokenState = null;
             this.minetracer$prevBrokenBlockEntity = null;
@@ -118,22 +117,22 @@ public class MixinServerPlayerInteractionManager {
         }
         CompletableFuture.runAsync(() -> {
             try {
-                net.minecraft.world.World world = ((com.minetracer.mixin.EntityAccessor)player).getWorld();
-                Identifier blockId = Registries.BLOCK.getId(state.getBlock());
+                net.minecraft.world.level.Level world = ((com.minetracer.mixin.EntityAccessor)player).getWorld();
+                Identifier blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
                 String nbt = null;
                 if (!state.getProperties().isEmpty() || blockEntity != null) {
-                    net.minecraft.nbt.NbtCompound fullNbt = new net.minecraft.nbt.NbtCompound();
+                    net.minecraft.nbt.CompoundTag fullNbt = new net.minecraft.nbt.CompoundTag();
                     if (!state.getProperties().isEmpty()) {
-                        net.minecraft.nbt.NbtCompound propertiesNbt = new net.minecraft.nbt.NbtCompound();
-                        for (net.minecraft.state.property.Property<?> property : state.getProperties()) {
+                        net.minecraft.nbt.CompoundTag propertiesNbt = new net.minecraft.nbt.CompoundTag();
+                        for (net.minecraft.world.level.block.state.properties.Property<?> property : state.getProperties()) {
                             String propertyName = property.getName();
-                            String propertyValue = state.get(property).toString();
+                            String propertyValue = state.getValue(property).toString();
                             propertiesNbt.putString(propertyName, propertyValue);
                         }
                         fullNbt.put("Properties", propertiesNbt);
                     }
                     if (blockEntity != null) {
-                        fullNbt.put("BlockEntityTag", blockEntity.createNbt(world.getRegistryManager()));
+                        fullNbt.put("BlockEntityTag", blockEntity.saveWithoutMetadata(world.registryAccess()));
                     }
                     nbt = fullNbt.toString();
                 }
@@ -148,7 +147,7 @@ public class MixinServerPlayerInteractionManager {
                         }
                     }
                     String beforeText = GSON.toJson(lines);
-                    OptimizedLogStorage.logSignAction("broke", player, pos, beforeText, sign.createNbt(world.getRegistryManager()).toString());
+                    OptimizedLogStorage.logSignAction("broke", player, pos, beforeText, sign.saveWithoutMetadata(world.registryAccess()).toString());
                 } else {
                     OptimizedLogStorage.logBlockAction("broke", player, pos, blockId.toString(), nbt);
                 }
@@ -158,10 +157,10 @@ public class MixinServerPlayerInteractionManager {
         }, OptimizedLogStorage.getAsyncExecutor());
     }
     @org.spongepowered.asm.mixin.Unique
-    private void minetracer$inspectorModeInteract(ServerPlayerEntity player, net.minecraft.world.World world,
-            net.minecraft.item.ItemStack stack, net.minecraft.util.Hand hand,
-            net.minecraft.util.hit.BlockHitResult hitResult,
-            CallbackInfoReturnable<net.minecraft.util.ActionResult> cir) {
+    private void minetracer$inspectorModeInteract(ServerPlayer player, net.minecraft.world.level.Level world,
+            net.minecraft.world.item.ItemStack stack, net.minecraft.world.InteractionHand hand,
+            net.minecraft.world.phys.BlockHitResult hitResult,
+            CallbackInfoReturnable<net.minecraft.world.InteractionResult> cir) {
         BlockPos pos = hitResult.getBlockPos();
         CompletableFuture.supplyAsync(() -> {
             java.util.List<OptimizedLogStorage.BlockLogEntry> blockLogs = OptimizedLogStorage.getBlockLogsInRange(pos, 0, null);
@@ -195,12 +194,12 @@ public class MixinServerPlayerInteractionManager {
             }
             return message.toString();
         }, OptimizedLogStorage.getAsyncExecutor()).thenAccept(message -> {
-            player.sendMessage(net.minecraft.text.Text.literal(message), false);
+            player.displayClientMessage(net.minecraft.network.chat.Component.literal(message), false);
         });
     }
     @org.spongepowered.asm.mixin.Unique
     private void minetracer$inspectorModeBreak(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
-        ServerPlayerEntity player = ((ServerPlayerInteractionManagerAccessor) this).getPlayer();
+        ServerPlayer player = ((ServerPlayerInteractionManagerAccessor) this).getPlayer();
         CompletableFuture.supplyAsync(() -> {
             java.util.List<OptimizedLogStorage.BlockLogEntry> blockLogs = OptimizedLogStorage.getBlockLogsInRange(pos, 0, null);
             java.util.List<OptimizedLogStorage.SignLogEntry> signLogs = OptimizedLogStorage.getSignLogsInRange(pos, 0, null);
@@ -233,7 +232,7 @@ public class MixinServerPlayerInteractionManager {
             }
             return message.toString();
         }, OptimizedLogStorage.getAsyncExecutor()).thenAccept(message -> {
-            player.sendMessage(net.minecraft.text.Text.literal(message), false);
+            player.displayClientMessage(net.minecraft.network.chat.Component.literal(message), false);
         });
     }
 }

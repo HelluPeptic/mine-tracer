@@ -1,9 +1,4 @@
 package com.minetracer.mixin;
-import net.minecraft.block.entity.SignBlockEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.entity.player.PlayerEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -12,6 +7,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import com.minetracer.features.minetracer.NewOptimizedLogStorage;
 import java.util.List;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.block.entity.SignBlockEntity;
 @Mixin(SignBlockEntity.class)
 public class MixinSignBlockEntity {
     @Unique
@@ -19,13 +19,13 @@ public class MixinSignBlockEntity {
     @Unique
     private boolean minetracer$editLogged = false;
     
-    @Inject(method = "tryChangeText", at = @At("HEAD"))
-    private void minetracer$cacheBeforeText(PlayerEntity player, boolean front, List messages, CallbackInfo ci) {
+    @Inject(method = "updateSignText", at = @At("HEAD"))
+    private void minetracer$cacheBeforeText(Player player, boolean front, List messages, CallbackInfo ci) {
         SignBlockEntity sign = (SignBlockEntity) (Object) this;
-        Text[] beforeLines = sign.getText(front).getMessages(false);
+        Component[] beforeLines = sign.getText(front).getMessages(false);
         StringBuilder beforeSb = new StringBuilder();
         for (int i = 0; i < beforeLines.length; i++) {
-            Text msg = beforeLines[i];
+            Component msg = beforeLines[i];
             beforeSb.append(msg != null ? msg.getString() : "");
             if (i < beforeLines.length - 1)
                 beforeSb.append("\n");
@@ -34,16 +34,16 @@ public class MixinSignBlockEntity {
         minetracer$editLogged = false;
     }
     
-    @Inject(method = "tryChangeText", at = @At("TAIL"))
-    private void minetracer$logSignEdit(PlayerEntity player, boolean front, List messages, CallbackInfo ci) {
+    @Inject(method = "updateSignText", at = @At("TAIL"))
+    private void minetracer$logSignEdit(Player player, boolean front, List messages, CallbackInfo ci) {
         if (minetracer$editLogged)
             return;
         minetracer$editLogged = true;
         
         SignBlockEntity sign = (SignBlockEntity) (Object) this;
-        BlockPos pos = sign.getPos();
-        if (sign.getWorld() instanceof ServerWorld) {
-            Text[] afterLines = sign.getText(front).getMessages(false);
+        BlockPos pos = sign.getBlockPos();
+        if (sign.getLevel() instanceof ServerLevel) {
+            Component[] afterLines = sign.getText(front).getMessages(false);
             String[] afterArr = new String[afterLines.length];
             for (int i = 0; i < afterLines.length; i++) {
                 afterArr[i] = afterLines[i] != null ? afterLines[i].getString() : "";

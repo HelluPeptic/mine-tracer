@@ -3,17 +3,16 @@ package com.minetracer.features.minetracer;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-
-import net.minecraft.block.BlockState;
-import net.minecraft.block.ChestBlock;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.ChestBlockEntity;
-import net.minecraft.block.enums.ChestType;
-import net.minecraft.inventory.DoubleInventory;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.CompoundContainer;
+import net.minecraft.world.Container;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.ChestType;
 
 /**
  * Handles container position tracking and canonical location resolution.
@@ -32,14 +31,14 @@ public class ContainerPositionTracker {
      * @param inventory The inventory being accessed
      * @return The canonical position for logging
      */
-    public static BlockPos getCanonicalContainerLocation(World world, BlockPos clickedPos, Inventory inventory) {
+    public static BlockPos getCanonicalContainerLocation(Level world, BlockPos clickedPos, Container inventory) {
         if (world == null || clickedPos == null || inventory == null) {
             return clickedPos;
         }
         
         // Check if this is a double chest inventory
-        if (inventory instanceof DoubleInventory) {
-            DoubleInventory doubleInv = (DoubleInventory) inventory;
+        if (inventory instanceof CompoundContainer) {
+            CompoundContainer doubleInv = (CompoundContainer) inventory;
             
             // For double chests, we need to find both halves and determine canonical position
             // Since we can't access private fields, we'll check the clicked position and adjacent blocks
@@ -47,11 +46,11 @@ public class ContainerPositionTracker {
             
             if (clickedState.getBlock() instanceof ChestBlock) {
                 ChestBlock chestBlock = (ChestBlock) clickedState.getBlock();
-                ChestType chestType = clickedState.get(ChestBlock.CHEST_TYPE);
+                ChestType chestType = clickedState.getValue(ChestBlock.TYPE);
                 
                 if (chestType != ChestType.SINGLE) {
                     // This is part of a double chest, find the canonical position
-                    Direction facing = clickedState.get(ChestBlock.FACING);
+                    Direction facing = clickedState.getValue(ChestBlock.FACING);
                     BlockPos otherHalf = getOtherChestHalf(clickedPos, facing, chestType);
                     
                     if (otherHalf != null) {
@@ -66,7 +65,7 @@ public class ContainerPositionTracker {
         BlockState state = world.getBlockState(clickedPos);
         BlockEntity blockEntity = world.getBlockEntity(clickedPos);
         
-        if (blockEntity instanceof Inventory) {
+        if (blockEntity instanceof Container) {
             return clickedPos;
         }
         
@@ -105,24 +104,24 @@ public class ContainerPositionTracker {
     /**
      * Gets container position from block entity, following CoreProtect's validation.
      */
-    public static BlockPos getContainerPosition(World world, BlockPos pos) {
+    public static BlockPos getContainerPosition(Level world, BlockPos pos) {
         if (world == null || pos == null) {
             return null;
         }
         
         BlockEntity blockEntity = world.getBlockEntity(pos);
-        if (blockEntity instanceof Inventory) {
+        if (blockEntity instanceof Container) {
             // For chest blocks, check if it's part of a double chest
             if (blockEntity instanceof ChestBlockEntity) {
                 ChestBlockEntity chestEntity = (ChestBlockEntity) blockEntity;
                 BlockState state = world.getBlockState(pos);
                 
                 if (state.getBlock() instanceof ChestBlock) {
-                    ChestType chestType = state.get(ChestBlock.CHEST_TYPE);
+                    ChestType chestType = state.getValue(ChestBlock.TYPE);
                     
                     if (chestType != ChestType.SINGLE) {
                         // This is part of a double chest, get the double inventory
-                        Inventory inventory = ChestBlock.getInventory((ChestBlock) state.getBlock(), state, world, pos, true);
+                        Container inventory = ChestBlock.getContainer((ChestBlock) state.getBlock(), state, world, pos, true);
                         return getCanonicalContainerLocation(world, pos, inventory);
                     }
                 }
@@ -137,18 +136,18 @@ public class ContainerPositionTracker {
     /**
      * Check if a block is a trackable container using CoreProtect's validation approach.
      */
-    public static boolean isTrackableContainer(World world, BlockPos pos) {
+    public static boolean isTrackableContainer(Level world, BlockPos pos) {
         if (world == null || pos == null) {
             return false;
         }
         
         BlockEntity blockEntity = world.getBlockEntity(pos);
-        if (!(blockEntity instanceof Inventory)) {
+        if (!(blockEntity instanceof Container)) {
             return false;
         }
         
         BlockState state = world.getBlockState(pos);
-        String blockId = net.minecraft.registry.Registries.BLOCK.getId(state.getBlock()).toString();
+        String blockId = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
         
         // CoreProtect's container validation logic adapted for Fabric
         
@@ -196,16 +195,16 @@ public class ContainerPositionTracker {
         // Determine where the other half should be based on facing and type
         if (chestType == ChestType.LEFT) {
             // Left chest, other half is to the right relative to facing
-            otherHalfDirection = facing.rotateYClockwise();
+            otherHalfDirection = facing.getClockWise();
         } else if (chestType == ChestType.RIGHT) {
             // Right chest, other half is to the left relative to facing
-            otherHalfDirection = facing.rotateYCounterclockwise();
+            otherHalfDirection = facing.getCounterClockWise();
         } else {
             // Single chest, no other half
             return null;
         }
         
-        return chestPos.offset(otherHalfDirection);
+        return chestPos.relative(otherHalfDirection);
     }
     
     // Legacy method for backward compatibility

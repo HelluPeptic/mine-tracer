@@ -1,10 +1,10 @@
 package com.minetracer.mixin;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.network.ServerPlayerInteractionManager;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerPlayerGameMode;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
-@Mixin(ServerPlayerInteractionManager.class)
+@Mixin(ServerPlayerGameMode.class)
 public interface ServerPlayerInteractionManagerAccessor {
     @Accessor("player")
-    ServerPlayerEntity getPlayer();
+    ServerPlayer getPlayer();
 }

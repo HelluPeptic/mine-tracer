@@ -1,13 +1,12 @@
 package com.minetracer.features.minetracer;
 
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.world.World;
-
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -68,7 +67,7 @@ public class NewOptimizedLogStorage {
     /**
      * Log container action (chest, barrel, etc.)
      */
-    public static void logContainerAction(String action, PlayerEntity player, BlockPos pos, ItemStack stack) {
+    public static void logContainerAction(String action, Player player, BlockPos pos, ItemStack stack) {
         if (stack.isEmpty() || !initialized || !MineTracerConfig.LOG_CONTAINER_TRANSACTIONS) {
             return;
         }
@@ -82,7 +81,7 @@ public class NewOptimizedLogStorage {
     /**
      * Log block action (place, break)
      */
-    public static void logBlockAction(String action, PlayerEntity player, BlockPos pos, String blockId, String nbt) {
+    public static void logBlockAction(String action, Player player, BlockPos pos, String blockId, String nbt) {
         if (!initialized || !MineTracerConfig.LOG_BLOCK_CHANGES) {
             return;
         }
@@ -96,7 +95,7 @@ public class NewOptimizedLogStorage {
     /**
      * Log sign action
      */
-    public static void logSignAction(String action, PlayerEntity player, BlockPos pos, String text, String nbt) {
+    public static void logSignAction(String action, Player player, BlockPos pos, String text, String nbt) {
         if (!initialized || !MineTracerConfig.LOG_SIGN_TEXT) {
             return;
         }
@@ -124,7 +123,7 @@ public class NewOptimizedLogStorage {
     /**
      * Log item pickup/drop action
      */
-    public static void logItemPickupDropAction(String action, PlayerEntity player, BlockPos pos, ItemStack stack, String world) {
+    public static void logItemPickupDropAction(String action, Player player, BlockPos pos, ItemStack stack, String world) {
         if (stack.isEmpty() || player == null || !initialized) {
             return;
         }
@@ -141,8 +140,8 @@ public class NewOptimizedLogStorage {
     /**
      * Log inventory action (compatibility method)
      */
-    public static void logInventoryAction(String action, PlayerEntity player, ItemStack stack) {
-        logContainerAction(action, player, BlockPos.ORIGIN, stack);
+    public static void logInventoryAction(String action, Player player, ItemStack stack) {
+        logContainerAction(action, player, BlockPos.ZERO, stack);
     }
     
     // =========================
@@ -215,12 +214,12 @@ public class NewOptimizedLogStorage {
     /**
      * Set inspector mode for player
      */
-    public static void setInspectorMode(ServerPlayerEntity player, boolean enabled) {
+    public static void setInspectorMode(ServerPlayer player, boolean enabled) {
         synchronized (inspectorPlayers) {
             if (enabled) {
-                inspectorPlayers.add(player.getUuid());
+                inspectorPlayers.add(player.getUUID());
             } else {
-                inspectorPlayers.remove(player.getUuid());
+                inspectorPlayers.remove(player.getUUID());
             }
         }
     }
@@ -228,16 +227,16 @@ public class NewOptimizedLogStorage {
     /**
      * Check if player is in inspector mode
      */
-    public static boolean isInspectorMode(ServerPlayerEntity player) {
+    public static boolean isInspectorMode(ServerPlayer player) {
         synchronized (inspectorPlayers) {
-            return inspectorPlayers.contains(player.getUuid());
+            return inspectorPlayers.contains(player.getUUID());
         }
     }
     
     /**
      * Toggle inspector mode for player
      */
-    public static void toggleInspectorMode(ServerPlayerEntity player) {
+    public static void toggleInspectorMode(ServerPlayer player) {
         setInspectorMode(player, !isInspectorMode(player));
     }
     
@@ -248,13 +247,13 @@ public class NewOptimizedLogStorage {
     /**
      * Get world name from World object
      */
-    private static String getWorldName(World world) {
+    private static String getWorldName(Level world) {
         if (world == null) {
             return "unknown";
         }
         
         // Get dimension name
-        String dimensionKey = world.getRegistryKey().getValue().toString();
+        String dimensionKey = world.dimension().identifier().toString();
         return dimensionKey;
     }
     

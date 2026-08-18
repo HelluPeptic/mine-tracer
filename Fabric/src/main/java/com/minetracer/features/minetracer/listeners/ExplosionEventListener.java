@@ -1,15 +1,15 @@
 package com.minetracer.features.minetracer.listeners;
 
-import net.minecraft.block.Block;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.TntEntity;
-import net.minecraft.entity.boss.dragon.EnderDragonEntity;
-import net.minecraft.entity.decoration.EndCrystalEntity;
-import net.minecraft.entity.mob.CreeperEntity;
-import net.minecraft.entity.projectile.WitherSkullEntity;
-import net.minecraft.entity.vehicle.TntMinecartEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.boss.enderdragon.EndCrystal;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
+import net.minecraft.world.entity.item.PrimedTnt;
+import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.projectile.hurtingprojectile.WitherSkull;
+import net.minecraft.world.entity.vehicle.minecart.MinecartTNT;
+import net.minecraft.world.level.block.Block;
 
 /**
  * Handles explosion events from various sources like TNT, Creepers, etc.
@@ -28,13 +28,13 @@ public class ExplosionEventListener {
      * @param world The world where explosion occurred
      * @param destroyedBlocks List of blocks destroyed by the explosion
      */
-    public static void processExplosion(Entity entity, ServerWorld world, java.util.List<BlockPos> destroyedBlocks) {
+    public static void processExplosion(Entity entity, ServerLevel world, java.util.List<BlockPos> destroyedBlocks) {
         String user = getExplosionUser(entity);
         
         // Log each destroyed block using string-based logging
         for (BlockPos pos : destroyedBlocks) {
             Block block = world.getBlockState(pos).getBlock();
-            String blockId = net.minecraft.registry.Registries.BLOCK.getId(block).toString();
+            String blockId = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block).toString();
             String nbt = createBlockStateNbt(world.getBlockState(pos));
             
             // Log the block break with string user
@@ -49,9 +49,9 @@ public class ExplosionEventListener {
      * @param pos Position of the block being destroyed
      * @param state BlockState of the block being destroyed
      */
-    public static void processExplosionBlock(Entity entity, ServerWorld world, BlockPos pos, net.minecraft.block.BlockState state) {
+    public static void processExplosionBlock(Entity entity, ServerLevel world, BlockPos pos, net.minecraft.world.level.block.state.BlockState state) {
         String user = getExplosionUser(entity);
-        String blockId = net.minecraft.registry.Registries.BLOCK.getId(state.getBlock()).toString();
+        String blockId = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
         String nbt = buildNbtString(world, pos, state);
 
         logExplosionBlockBreak(user, pos, blockId, nbt, world);
@@ -66,19 +66,19 @@ public class ExplosionEventListener {
      *
      * Called on the main server thread, so world.getBlockEntity() is safe here.
      */
-    private static String buildNbtString(ServerWorld world, BlockPos pos, net.minecraft.block.BlockState state) {
+    private static String buildNbtString(ServerLevel world, BlockPos pos, net.minecraft.world.level.block.state.BlockState state) {
         try {
-            net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
+            net.minecraft.world.level.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
             if (blockEntity != null) {
-                net.minecraft.nbt.NbtCompound fullNbt = new net.minecraft.nbt.NbtCompound();
+                net.minecraft.nbt.CompoundTag fullNbt = new net.minecraft.nbt.CompoundTag();
                 if (!state.getProperties().isEmpty()) {
-                    net.minecraft.nbt.NbtCompound propertiesNbt = new net.minecraft.nbt.NbtCompound();
-                    for (net.minecraft.state.property.Property<?> prop : state.getProperties()) {
-                        propertiesNbt.putString(prop.getName(), state.get(prop).toString());
+                    net.minecraft.nbt.CompoundTag propertiesNbt = new net.minecraft.nbt.CompoundTag();
+                    for (net.minecraft.world.level.block.state.properties.Property<?> prop : state.getProperties()) {
+                        propertiesNbt.putString(prop.getName(), state.getValue(prop).toString());
                     }
                     fullNbt.put("Properties", propertiesNbt);
                 }
-                fullNbt.put("BlockEntityTag", blockEntity.createNbt(world.getRegistryManager()));
+                fullNbt.put("BlockEntityTag", blockEntity.saveWithoutMetadata(world.registryAccess()));
                 return fullNbt.toString();
             }
         } catch (Exception e) {
@@ -93,7 +93,7 @@ public class ExplosionEventListener {
      * @param world The world where explosion occurred
      * @param center Center position of the explosion
      */
-    public static void processExplosionEvent(Entity entity, ServerWorld world, BlockPos center) {
+    public static void processExplosionEvent(Entity entity, ServerLevel world, BlockPos center) {
         String user = getExplosionUser(entity);
         String worldName = getWorldName(world);
         
@@ -104,7 +104,7 @@ public class ExplosionEventListener {
     /**
      * Log explosion block breaks directly to database
      */
-    private static void logExplosionBlockBreak(String user, BlockPos pos, String blockId, String nbt, ServerWorld world) {
+    private static void logExplosionBlockBreak(String user, BlockPos pos, String blockId, String nbt, ServerLevel world) {
         String worldName = getWorldName(world);
         Object[] data = new Object[]{"broke", user, pos, blockId, nbt, worldName};
         
@@ -115,9 +115,9 @@ public class ExplosionEventListener {
     /**
      * Get world name for logging
      */
-    private static String getWorldName(ServerWorld world) {
+    private static String getWorldName(ServerLevel world) {
         if (world == null) return "world";
-        return world.getRegistryKey().getValue().toString();
+        return world.dimension().identifier().toString();
     }
     
     /**
@@ -129,22 +129,22 @@ public class ExplosionEventListener {
             return "#explosion";
         }
         
-        if (entity instanceof TntEntity) {
+        if (entity instanceof PrimedTnt) {
             return "#tnt";
         }
-        else if (entity instanceof TntMinecartEntity) {
+        else if (entity instanceof MinecartTNT) {
             return "#tnt";
         }
-        else if (entity instanceof CreeperEntity) {
+        else if (entity instanceof Creeper) {
             return "#creeper";
         }
-        else if (entity instanceof EnderDragonEntity) {
+        else if (entity instanceof EnderDragon) {
             return "#enderdragon";
         }
-        else if (entity instanceof WitherSkullEntity) {
+        else if (entity instanceof WitherSkull) {
             return "#wither";
         }
-        else if (entity instanceof EndCrystalEntity) {
+        else if (entity instanceof EndCrystal) {
             return "#end_crystal";
         }
         
@@ -162,16 +162,16 @@ public class ExplosionEventListener {
      * Format: "[key=value,key=value]" or "" for blocks with no properties.
      * Equivalent to Bukkit's blockData.getAsString() properties section.
      */
-    private static String createBlockStateNbt(net.minecraft.block.BlockState state) {
+    private static String createBlockStateNbt(net.minecraft.world.level.block.state.BlockState state) {
         try {
             if (state.getProperties().isEmpty()) {
                 return "";
             }
             StringBuilder sb = new StringBuilder("[");
             boolean first = true;
-            for (net.minecraft.state.property.Property<?> property : state.getProperties()) {
+            for (net.minecraft.world.level.block.state.properties.Property<?> property : state.getProperties()) {
                 if (!first) sb.append(',');
-                sb.append(property.getName()).append('=').append(state.get(property).toString());
+                sb.append(property.getName()).append('=').append(state.getValue(property).toString());
                 first = false;
             }
             sb.append(']');

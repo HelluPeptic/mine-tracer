@@ -17,20 +17,20 @@ import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 
 import me.lucko.fabric.api.permissions.v0.Permissions;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
-import net.minecraft.registry.Registries;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 public class MineTracerCommand {
     
     // Undo tracking system - stores last rollback/restore operation per player
@@ -56,81 +56,81 @@ public class MineTracerCommand {
     
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("minetracer")
-                    .then(CommandManager.literal("lookup")
+            dispatcher.register(Commands.literal("minetracer")
+                    .then(Commands.literal("lookup")
                             .requires(source -> Permissions.check(source, "minetracer.command.lookup", 2))
-                            .then(CommandManager.argument("arg", StringArgumentType.greedyString())
+                            .then(Commands.argument("arg", StringArgumentType.greedyString())
                                     .suggests(MineTracerCommand::suggestPlayers)
                                     .executes(MineTracerCommand::lookup)))
-                    .then(CommandManager.literal("rollback")
+                    .then(Commands.literal("rollback")
                             .requires(source -> Permissions.check(source, "minetracer.command.rollback", 2))
-                            .then(CommandManager.argument("arg", StringArgumentType.greedyString())
+                            .then(Commands.argument("arg", StringArgumentType.greedyString())
                                     .suggests(MineTracerCommand::suggestPlayers)
                                     .executes(MineTracerCommand::rollback)))
-                    .then(CommandManager.literal("restore")
+                    .then(Commands.literal("restore")
                             .requires(source -> Permissions.check(source, "minetracer.command.restore", 2))
-                            .then(CommandManager.argument("arg", StringArgumentType.greedyString())
+                            .then(Commands.argument("arg", StringArgumentType.greedyString())
                                     .suggests(MineTracerCommand::suggestPlayers)
                                     .executes(MineTracerCommand::restore)))
-                    .then(CommandManager.literal("undo")
+                    .then(Commands.literal("undo")
                             .requires(source -> Permissions.check(source, "minetracer.command.undo", 2))
                             .executes(MineTracerCommand::undo))
-                    .then(CommandManager.literal("page")
+                    .then(Commands.literal("page")
                             .requires(source -> Permissions.check(source, "minetracer.command.page", 2))
-                            .then(CommandManager
+                            .then(Commands
                                     .argument("page", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
                                     .executes(MineTracerCommand::lookupPage)))
-                    .then(CommandManager.literal("inspector")
+                    .then(Commands.literal("inspector")
                             .requires(source -> Permissions.check(source, "minetracer.command.inspector", 2))
                             .executes(MineTracerCommand::toggleInspector))
-                    .then(CommandManager.literal("save")
+                    .then(Commands.literal("save")
                             .requires(source -> Permissions.check(source, "minetracer.command.save", 2))
                             .executes(MineTracerCommand::save))
-                    .then(CommandManager.literal("saves")
+                    .then(Commands.literal("saves")
                             .requires(source -> Permissions.check(source, "minetracer.command.saves", 2))
                             .executes(MineTracerCommand::showSaveHistory))
                     .executes(context -> {
-                        ServerCommandSource source = context.getSource();
-                        source.sendError(Text.literal("Invalid command usage. Use /minetracer <lookup|rollback|restore|undo|page|inspector|save|saves>"));
+                        CommandSourceStack source = context.getSource();
+                        source.sendFailure(Component.literal("Invalid command usage. Use /minetracer <lookup|rollback|restore|undo|page|inspector|save|saves>"));
                         return 0;
                     }));
 
             // /mt shorthand aliases
-            dispatcher.register(CommandManager.literal("mt")
-                    .then(CommandManager.literal("i")
+            dispatcher.register(Commands.literal("mt")
+                    .then(Commands.literal("i")
                             .requires(source -> Permissions.check(source, "minetracer.command.inspector", 2))
                             .executes(MineTracerCommand::toggleInspector))
-                    .then(CommandManager.literal("l")
+                    .then(Commands.literal("l")
                             .requires(source -> Permissions.check(source, "minetracer.command.lookup", 2))
-                            .then(CommandManager.argument("arg", StringArgumentType.greedyString())
+                            .then(Commands.argument("arg", StringArgumentType.greedyString())
                                     .suggests(MineTracerCommand::suggestPlayers)
                                     .executes(MineTracerCommand::lookup)))
-                    .then(CommandManager.literal("rb")
+                    .then(Commands.literal("rb")
                             .requires(source -> Permissions.check(source, "minetracer.command.rollback", 2))
-                            .then(CommandManager.argument("arg", StringArgumentType.greedyString())
+                            .then(Commands.argument("arg", StringArgumentType.greedyString())
                                     .suggests(MineTracerCommand::suggestPlayers)
                                     .executes(MineTracerCommand::rollback)))
-                    .then(CommandManager.literal("rs")
+                    .then(Commands.literal("rs")
                             .requires(source -> Permissions.check(source, "minetracer.command.restore", 2))
-                            .then(CommandManager.argument("arg", StringArgumentType.greedyString())
+                            .then(Commands.argument("arg", StringArgumentType.greedyString())
                                     .suggests(MineTracerCommand::suggestPlayers)
                                     .executes(MineTracerCommand::restore)))
-                    .then(CommandManager.literal("undo")
+                    .then(Commands.literal("undo")
                             .requires(source -> Permissions.check(source, "minetracer.command.undo", 2))
                             .executes(MineTracerCommand::undo))
-                    .then(CommandManager.literal("page")
+                    .then(Commands.literal("page")
                             .requires(source -> Permissions.check(source, "minetracer.command.page", 2))
-                            .then(CommandManager
+                            .then(Commands
                                     .argument("page", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
                                     .executes(MineTracerCommand::lookupPage)))
                     .executes(context -> {
-                        ServerCommandSource source = context.getSource();
-                        source.sendError(Text.literal("Invalid command usage. Use /mt i (inspector), /mt l <filters> (lookup), /mt rb <filters> (rollback), /mt rs <filters> (restore)"));
+                        CommandSourceStack source = context.getSource();
+                        source.sendFailure(Component.literal("Invalid command usage. Use /mt i (inspector), /mt l <filters> (lookup), /mt rb <filters> (rollback), /mt rs <filters> (restore)"));
                         return 0;
                     }));
         });
     }
-    public static CompletableFuture<Suggestions> suggestPlayers(CommandContext<ServerCommandSource> ctx,
+    public static CompletableFuture<Suggestions> suggestPlayers(CommandContext<CommandSourceStack> ctx,
             SuggestionsBuilder builder) {
         String input = builder.getInput();
         String remaining = builder.getRemaining();
@@ -166,7 +166,7 @@ public class MineTracerCommand {
             String userPart = currentTyping.substring(5);
             String beforeCurrent = remaining.substring(0, remaining.lastIndexOf(currentTyping));
             java.util.Set<String> allPlayerNames = new java.util.HashSet<>();
-            for (ServerPlayerEntity player : ctx.getSource().getServer().getPlayerManager().getPlayerList()) {
+            for (ServerPlayer player : ctx.getSource().getServer().getPlayerList().getPlayers()) {
                 allPlayerNames.add(player.getName().getString());
             }
             try {
@@ -293,10 +293,10 @@ public class MineTracerCommand {
             this.queryPos = queryPos;
         }
     }
-    public static int lookup(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
+    public static int lookup(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
         if (!Permissions.check(source, "minetracer.command.lookup", 2)) {
-            source.sendError(Text.literal("You do not have permission to use this command."));
+            source.sendFailure(Component.literal("You do not have permission to use this command."));
             return 0;
         }
         String arg = StringArgumentType.getString(ctx, "arg");
@@ -337,7 +337,7 @@ public class MineTracerCommand {
                     excludeItem = part.startsWith("exclude:") ? part.substring(8) : part.substring(2);
                 }
             }
-            BlockPos playerPos = source.getPlayer().getBlockPos();
+            BlockPos playerPos = source.getPlayer().blockPosition();
             Instant cutoff = null;
             if (timeArg != null) {
                 long seconds = parseTimeArg(timeArg);
@@ -348,7 +348,7 @@ public class MineTracerCommand {
             boolean hasUser = userFilter != null;
             int restrictionCount = (hasRange ? 1 : 0) + (hasTime ? 1 : 0) + (hasUser ? 1 : 0);
             if (restrictionCount < 2) {
-                source.sendError(Text.literal(
+                source.sendFailure(Component.literal(
                         "Lookup requires at least 2 of these filters: range:<blocks>, time:<duration>, user:<player>. Examples: 'range:50 user:PlayerName' or 'time:1h user:PlayerName' or 'range:20 time:30m'"));
                 return null;
             }
@@ -363,8 +363,8 @@ public class MineTracerCommand {
             CompletableFuture<List<MineTracerLookup.ContainerLogEntry>> containerLogsFuture;
             CompletableFuture<List<MineTracerLookup.KillLogEntry>> killLogsFuture;
             CompletableFuture<List<MineTracerLookup.ItemPickupDropLogEntry>> itemLogsFuture;
-            ServerPlayerEntity player = source.getPlayer();
-            String worldName = ((com.minetracer.mixin.EntityAccessor)player).getWorld().getRegistryKey().getValue().toString();
+            ServerPlayer player = source.getPlayer();
+            String worldName = ((com.minetracer.mixin.EntityAccessor)player).getWorld().dimension().identifier().toString();
             if (hasUser && !hasRange) {
                 blockLogsFuture = MineTracerLookup.getBlockLogsForUserAsync(userFilter, worldName);
                 signLogsFuture = MineTracerLookup.getSignLogsForUserAsync(userFilter, worldName);
@@ -415,11 +415,11 @@ public class MineTracerCommand {
                     // Use CoreProtect-style partial matching instead of exact equals
                     containerLogs.removeIf(
                             entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
-                                    Registries.ITEM.getId(entry.stack.getItem()).toString(), includeItemFinal));
+                                    BuiltInRegistries.ITEM.getKey(entry.stack.getItem()).toString(), includeItemFinal));
                     blockLogs.removeIf(entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
                             entry.blockId, includeItemFinal));
                     itemLogs.removeIf(entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
-                            Registries.ITEM.getId(entry.stack.getItem()).toString(), includeItemFinal));
+                            BuiltInRegistries.ITEM.getKey(entry.stack.getItem()).toString(), includeItemFinal));
                 }
                 if (excludeItem != null && !excludeItem.isEmpty()) {
                     final String excludeItemFinal = excludeItem;
@@ -427,11 +427,11 @@ public class MineTracerCommand {
                     // Exclude matching items
                     containerLogs.removeIf(
                             entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
-                                    Registries.ITEM.getId(entry.stack.getItem()).toString(), excludeItemFinal));
+                                    BuiltInRegistries.ITEM.getKey(entry.stack.getItem()).toString(), excludeItemFinal));
                     blockLogs.removeIf(entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
                             entry.blockId, excludeItemFinal));
                     itemLogs.removeIf(entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
-                            Registries.ITEM.getId(entry.stack.getItem()).toString(), excludeItemFinal));
+                            BuiltInRegistries.ITEM.getKey(entry.stack.getItem()).toString(), excludeItemFinal));
                 }
                 List<FlatLogEntry> flatList = new ArrayList<>();
                 for (MineTracerLookup.ContainerLogEntry entry : containerLogs) {
@@ -477,30 +477,30 @@ public class MineTracerCommand {
                 throw new RuntimeException("Error executing lookup", e);
             }
         }).thenAccept(flatList -> {
-            QueryContext queryContext = new QueryContext(flatList, arg, source.getPlayer().getBlockPos());
-            lastQueries.put(source.getPlayer().getUuid(), queryContext);
+            QueryContext queryContext = new QueryContext(flatList, arg, source.getPlayer().blockPosition());
+            lastQueries.put(source.getPlayer().getUUID(), queryContext);
             displayPage(source, flatList, 1, queryContext.entriesPerPage);
         }).exceptionally(throwable -> {
-            source.sendError(Text.literal("Error performing lookup: " + throwable.getMessage()));
+            source.sendFailure(Component.literal("Error performing lookup: " + throwable.getMessage()));
             return null;
         });
         return Command.SINGLE_SUCCESS;
     }
-    public static void displayPage(ServerCommandSource source, List<FlatLogEntry> logs, int page, int entriesPerPage) {
+    public static void displayPage(CommandSourceStack source, List<FlatLogEntry> logs, int page, int entriesPerPage) {
         int totalEntries = logs.size();
         int totalPages = (totalEntries + entriesPerPage - 1) / entriesPerPage;
         int start = (page - 1) * entriesPerPage;
         int end = Math.min(start + entriesPerPage, totalEntries);
         if (start >= totalEntries || page < 1) {
-            source.sendError(Text.literal("Invalid page number."));
+            source.sendFailure(Component.literal("Invalid page number."));
             return;
         }
-        source.sendFeedback(() -> Text.literal("----- MineTracer Lookup Results -----").formatted(Formatting.AQUA),
+        source.sendSuccess(() -> Component.literal("----- MineTracer Lookup Results -----").withStyle(ChatFormatting.AQUA),
                 false);
         for (int i = start; i < end; i++) {
             FlatLogEntry fle = logs.get(i);
-            source.sendFeedback(() -> formatCoordinatesForChat(fle.entry), false);
-            source.sendFeedback(() -> formatLogEntryForChat(fle.entry), false);
+            source.sendSuccess(() -> formatCoordinatesForChat(fle.entry), false);
+            source.sendSuccess(() -> formatLogEntryForChat(fle.entry), false);
             if (fle.entry instanceof MineTracerLookup.SignLogEntry) {
                 MineTracerLookup.SignLogEntry se = (MineTracerLookup.SignLogEntry) fle.entry;
                 if (se.action.equals("edit") && se.nbt != null && !se.nbt.isEmpty()) {
@@ -509,108 +509,108 @@ public class MineTracerCommand {
                         com.google.gson.JsonObject nbtObj = gson.fromJson(se.nbt, com.google.gson.JsonObject.class);
                         String[] beforeLines = gson.fromJson(nbtObj.get("before"), String[].class);
                         String[] afterLines = gson.fromJson(nbtObj.get("after"), String[].class);
-                        source.sendFeedback(() -> Text.literal("[before]").formatted(Formatting.RED), false);
+                        source.sendSuccess(() -> Component.literal("[before]").withStyle(ChatFormatting.RED), false);
                         for (String line : beforeLines) {
                             if (line != null && !line.trim().isEmpty()) {
-                                source.sendFeedback(() -> Text.literal("  " + line).formatted(Formatting.WHITE), false);
+                                source.sendSuccess(() -> Component.literal("  " + line).withStyle(ChatFormatting.WHITE), false);
                             }
                         }
-                        source.sendFeedback(() -> Text.literal("[after]").formatted(Formatting.GREEN), false);
+                        source.sendSuccess(() -> Component.literal("[after]").withStyle(ChatFormatting.GREEN), false);
                         for (String line : afterLines) {
                             if (line != null && !line.trim().isEmpty()) {
-                                source.sendFeedback(() -> Text.literal("  " + line).formatted(Formatting.WHITE), false);
+                                source.sendSuccess(() -> Component.literal("  " + line).withStyle(ChatFormatting.WHITE), false);
                             }
                         }
                     } catch (Exception e) {
-                        source.sendFeedback(
-                                () -> Text.literal("  (Sign text parsing failed)").formatted(Formatting.GRAY), false);
+                        source.sendSuccess(
+                                () -> Component.literal("  (Sign text parsing failed)").withStyle(ChatFormatting.GRAY), false);
                     }
                 }
             }
         }
-        source.sendFeedback(
-                () -> Text
+        source.sendSuccess(
+                () -> Component
                         .literal("Page " + page + "/" + totalPages + " (" + totalEntries
                                 + " entries) - Use /minetracer page <number> for other pages")
-                        .formatted(Formatting.GRAY),
+                        .withStyle(ChatFormatting.GRAY),
                 false);
     }
-    public static Text formatLogEntryForChat(Object entry) {
+    public static Component formatLogEntryForChat(Object entry) {
         if (entry instanceof MineTracerLookup.ContainerLogEntry) {
             MineTracerLookup.ContainerLogEntry ce = (MineTracerLookup.ContainerLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(ce.timestamp, Instant.now()).getSeconds());
-            String itemId = Registries.ITEM.getId(ce.stack.getItem()).toString();
+            String itemId = BuiltInRegistries.ITEM.getKey(ce.stack.getItem()).toString();
             String itemName = ce.stack.getItem().getName().getString();
             boolean isRolledBack = ce.rolledBack;
-            Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
-                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
-                    .append(Text.literal(ce.playerName).formatted(Formatting.AQUA))
-                    .append(Text.literal(" " + ce.action + " ").formatted(Formatting.GREEN))
-                    .append(Text.literal(ce.stack.getCount() + "x ").formatted(Formatting.WHITE))
-                    .append(Text.literal("#" + itemId).formatted(Formatting.YELLOW))
-                    .append(Text.literal(" (" + itemName + ")").formatted(Formatting.GRAY));
+            Component base = Component.literal(timeAgo + " ago").withStyle(ChatFormatting.WHITE)
+                    .append(Component.literal(" — ").withStyle(ChatFormatting.WHITE))
+                    .append(Component.literal(ce.playerName).withStyle(ChatFormatting.AQUA))
+                    .append(Component.literal(" " + ce.action + " ").withStyle(ChatFormatting.GREEN))
+                    .append(Component.literal(ce.stack.getCount() + "x ").withStyle(ChatFormatting.WHITE))
+                    .append(Component.literal("#" + itemId).withStyle(ChatFormatting.YELLOW))
+                    .append(Component.literal(" (" + itemName + ")").withStyle(ChatFormatting.GRAY));
             if (isRolledBack) {
-                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
+                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(ChatFormatting.DARK_GRAY));
             }
             return base;
         } else if (entry instanceof MineTracerLookup.BlockLogEntry) {
             MineTracerLookup.BlockLogEntry be = (MineTracerLookup.BlockLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(be.timestamp, Instant.now()).getSeconds());
-            net.minecraft.block.Block block = Registries.BLOCK.get(Identifier.of(be.blockId));
+            net.minecraft.world.level.block.Block block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(be.blockId));
             String blockName = block.getName().getString();
             boolean isRolledBack = be.rolledBack;
-            Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
-                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
-                    .append(Text.literal(be.playerName).formatted(Formatting.AQUA))
-                    .append(Text.literal(" " + be.action + " block ").formatted(Formatting.GREEN))
-                    .append(Text.literal("#" + be.blockId).formatted(Formatting.YELLOW))
-                    .append(Text.literal(" (" + blockName + ")").formatted(Formatting.GRAY));
+            Component base = Component.literal(timeAgo + " ago").withStyle(ChatFormatting.WHITE)
+                    .append(Component.literal(" — ").withStyle(ChatFormatting.WHITE))
+                    .append(Component.literal(be.playerName).withStyle(ChatFormatting.AQUA))
+                    .append(Component.literal(" " + be.action + " block ").withStyle(ChatFormatting.GREEN))
+                    .append(Component.literal("#" + be.blockId).withStyle(ChatFormatting.YELLOW))
+                    .append(Component.literal(" (" + blockName + ")").withStyle(ChatFormatting.GRAY));
             if (isRolledBack) {
-                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
+                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(ChatFormatting.DARK_GRAY));
             }
             return base;
         } else if (entry instanceof MineTracerLookup.SignLogEntry) {
             MineTracerLookup.SignLogEntry se = (MineTracerLookup.SignLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(se.timestamp, Instant.now()).getSeconds());
             boolean isRolledBack = se.rolledBack;
-            Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
-                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
-                    .append(Text.literal(se.playerName).formatted(Formatting.AQUA))
-                    .append(Text.literal(" edited sign").formatted(Formatting.YELLOW));
+            Component base = Component.literal(timeAgo + " ago").withStyle(ChatFormatting.WHITE)
+                    .append(Component.literal(" — ").withStyle(ChatFormatting.WHITE))
+                    .append(Component.literal(se.playerName).withStyle(ChatFormatting.AQUA))
+                    .append(Component.literal(" edited sign").withStyle(ChatFormatting.YELLOW));
             if (isRolledBack) {
-                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
+                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(ChatFormatting.DARK_GRAY));
             }
             return base;
         } else if (entry instanceof MineTracerLookup.KillLogEntry) {
             MineTracerLookup.KillLogEntry ke = (MineTracerLookup.KillLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(ke.timestamp, Instant.now()).getSeconds());
             boolean isRolledBack = ke.rolledBack;
-            Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
-                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
-                    .append(Text.literal(ke.killerName).formatted(Formatting.AQUA))
-                    .append(Text.literal(" killed ").formatted(Formatting.GREEN))
-                    .append(Text.literal(ke.victimName).formatted(Formatting.RED));
+            Component base = Component.literal(timeAgo + " ago").withStyle(ChatFormatting.WHITE)
+                    .append(Component.literal(" — ").withStyle(ChatFormatting.WHITE))
+                    .append(Component.literal(ke.killerName).withStyle(ChatFormatting.AQUA))
+                    .append(Component.literal(" killed ").withStyle(ChatFormatting.GREEN))
+                    .append(Component.literal(ke.victimName).withStyle(ChatFormatting.RED));
             if (isRolledBack) {
-                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(Formatting.DARK_GRAY));
+                base = base.copy().setStyle(base.getStyle().withStrikethrough(true).withColor(ChatFormatting.DARK_GRAY));
             }
             return base;
         } else if (entry instanceof MineTracerLookup.ItemPickupDropLogEntry) {
             MineTracerLookup.ItemPickupDropLogEntry ie = (MineTracerLookup.ItemPickupDropLogEntry) entry;
             String timeAgo = getTimeAgo(Duration.between(ie.timestamp, Instant.now()).getSeconds());
-            String itemId = Registries.ITEM.getId(ie.stack.getItem()).toString();
+            String itemId = BuiltInRegistries.ITEM.getKey(ie.stack.getItem()).toString();
             String itemName = ie.stack.getItem().getName().getString();
-            Text base = Text.literal(timeAgo + " ago").formatted(Formatting.WHITE)
-                    .append(Text.literal(" — ").formatted(Formatting.WHITE))
-                    .append(Text.literal(ie.playerName).formatted(Formatting.AQUA))
-                    .append(Text.literal(" " + ie.action + " ").formatted(Formatting.GREEN))
-                    .append(Text.literal(ie.stack.getCount() + "x ").formatted(Formatting.WHITE))
-                    .append(Text.literal("#" + itemId).formatted(Formatting.YELLOW))
-                    .append(Text.literal(" (" + itemName + ")").formatted(Formatting.GRAY));
+            Component base = Component.literal(timeAgo + " ago").withStyle(ChatFormatting.WHITE)
+                    .append(Component.literal(" — ").withStyle(ChatFormatting.WHITE))
+                    .append(Component.literal(ie.playerName).withStyle(ChatFormatting.AQUA))
+                    .append(Component.literal(" " + ie.action + " ").withStyle(ChatFormatting.GREEN))
+                    .append(Component.literal(ie.stack.getCount() + "x ").withStyle(ChatFormatting.WHITE))
+                    .append(Component.literal("#" + itemId).withStyle(ChatFormatting.YELLOW))
+                    .append(Component.literal(" (" + itemName + ")").withStyle(ChatFormatting.GRAY));
             return base;
         }
-        return Text.literal("Unknown log entry").formatted(Formatting.GRAY);
+        return Component.literal("Unknown log entry").withStyle(ChatFormatting.GRAY);
     }
-    public static Text formatCoordinatesForChat(Object entry) {
+    public static Component formatCoordinatesForChat(Object entry) {
         BlockPos pos = null;
         if (entry instanceof MineTracerLookup.ContainerLogEntry) {
             pos = ((MineTracerLookup.ContainerLogEntry) entry).pos;
@@ -628,20 +628,20 @@ public class MineTracerCommand {
             String coordText = "(x" + pos.getX() + "/y" + pos.getY() + "/z" + pos.getZ() + ")";
             String teleportCommand = "/tp @s " + pos.getX() + " " + pos.getY() + " " + pos.getZ();
             
-            return Text.literal(coordText)
-                    .formatted(Formatting.GOLD)
-                    .styled(style -> style
+            return Component.literal(coordText)
+                    .withStyle(ChatFormatting.GOLD)
+                    .withStyle(style -> style
                             // ClickEvent and HoverEvent are now records in 1.21.11
                             // .withClickEvent(new ClickEvent(Action.RUN_COMMAND, teleportCommand))
                             // .withHoverEvent(new HoverEvent(Action.SHOW_TEXT, Text.literal("Click to teleport")))
-                            .withUnderline(true));
+                            .withUnderlined(true));
         }
-        return Text.literal("").formatted(Formatting.GRAY);
+        return Component.literal("").withStyle(ChatFormatting.GRAY);
     }
-    public static int rollback(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
+    public static int rollback(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
         if (!Permissions.check(source, "minetracer.command.rollback", 2)) {
-            source.sendError(Text.literal("You do not have permission to use this command."));
+            source.sendFailure(Component.literal("You do not have permission to use this command."));
             return 0;
         }
         String arg = StringArgumentType.getString(ctx, "arg");
@@ -687,7 +687,7 @@ public class MineTracerCommand {
                 force = true;
             }
         }
-        BlockPos playerPos = source.getPlayer().getBlockPos();
+        BlockPos playerPos = source.getPlayer().blockPosition();
         Instant cutoff = null;
         if (timeArg != null) {
             long seconds = parseTimeArg(timeArg);
@@ -698,13 +698,13 @@ public class MineTracerCommand {
         boolean hasUser = userFilter != null;
         int restrictionCount = (hasRange ? 1 : 0) + (hasTime ? 1 : 0) + (hasUser ? 1 : 0);
         if (restrictionCount < 2) {
-            source.sendError(Text.literal(
+            source.sendFailure(Component.literal(
                     "Rollback requires at least 2 of these filters: range:<blocks>, time:<duration>, user:<player>. Examples: 'range:50 user:PlayerName' or 'time:1h user:PlayerName' or 'range:20 time:30m'. Add #force to re-rollback previously processed entries."));
             return Command.SINGLE_SUCCESS;
         }
         
         // Use the new database lookup system (same as lookup command)
-        String worldName = ((com.minetracer.mixin.EntityAccessor)source.getPlayer()).getWorld().getRegistryKey().getValue().toString();
+        String worldName = ((com.minetracer.mixin.EntityAccessor)source.getPlayer()).getWorld().dimension().identifier().toString();
         List<MineTracerLookup.BlockLogEntry> blockLogs;
         List<MineTracerLookup.SignLogEntry> signLogs;
         List<MineTracerLookup.ContainerLogEntry> containerLogs;
@@ -719,8 +719,8 @@ public class MineTracerCommand {
         int queueSizeBefore = MineTracerConsumer.getQueueSize();
         if (queueSizeBefore > 0) {
             final int finalQueueSize = queueSizeBefore;
-            source.sendFeedback(() -> Text.literal("[MineTracer] Flushing " + finalQueueSize + " pending log entries before rollback...")
-                    .formatted(Formatting.GRAY), false);
+            source.sendSuccess(() -> Component.literal("[MineTracer] Flushing " + finalQueueSize + " pending log entries before rollback...")
+                    .withStyle(ChatFormatting.GRAY), false);
             MineTracerConsumer.waitForQueue(5000);
         }
 
@@ -730,7 +730,7 @@ public class MineTracerCommand {
             containerLogs = MineTracerLookup.getContainerLogsInRangeAsync(playerPos, searchRange, userFilter, worldName).get();
             killLogs = MineTracerLookup.getKillLogsInRangeAsync(playerPos, searchRange, userFilter, worldName).get();
         } catch (Exception e) {
-            source.sendError(Text.literal("[MineTracer] Error querying database: " + e.getMessage()));
+            source.sendFailure(Component.literal("[MineTracer] Error querying database: " + e.getMessage()));
             e.printStackTrace();
             return Command.SINGLE_SUCCESS;
         }
@@ -764,7 +764,7 @@ public class MineTracerCommand {
             // Use CoreProtect-style partial matching instead of exact equals
             containerLogs.removeIf(
                     entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
-                            Registries.ITEM.getId(entry.stack.getItem()).toString(), includeItemFinal));
+                            BuiltInRegistries.ITEM.getKey(entry.stack.getItem()).toString(), includeItemFinal));
             blockLogs.removeIf(entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
                     entry.blockId, includeItemFinal));
         }
@@ -773,29 +773,29 @@ public class MineTracerCommand {
             // Exclude matching items
             containerLogs.removeIf(
                     entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
-                            Registries.ITEM.getId(entry.stack.getItem()).toString(), excludeItemFinal));
+                            BuiltInRegistries.ITEM.getKey(entry.stack.getItem()).toString(), excludeItemFinal));
             blockLogs.removeIf(entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
                     entry.blockId, excludeItemFinal));
         }
         int successfulRollbacks = 0;
         int failedRollbacks = 0;
-        ServerWorld world = source.getWorld();
+        ServerLevel world = source.getLevel();
         
         int totalActions = containerLogs.size() + blockLogs.size() + signLogs.size();
         if (totalActions == 0) {
-            source.sendFeedback(() -> Text.literal("[MineTracer] No actions found matching the specified filters.")
-                    .formatted(Formatting.YELLOW), false);
+            source.sendSuccess(() -> Component.literal("[MineTracer] No actions found matching the specified filters.")
+                    .withStyle(ChatFormatting.YELLOW), false);
             return Command.SINGLE_SUCCESS;
         }
         
         // Preview mode - show ghost blocks to the player
         if (preview) {
-            source.sendFeedback(() -> Text.literal("[MineTracer] PREVIEW MODE - Showing ghost blocks...")
-                    .formatted(Formatting.YELLOW), false);
-            source.sendFeedback(() -> Text.literal("Found " + totalActions + " actions to preview.")
-                    .formatted(Formatting.AQUA), false);
+            source.sendSuccess(() -> Component.literal("[MineTracer] PREVIEW MODE - Showing ghost blocks...")
+                    .withStyle(ChatFormatting.YELLOW), false);
+            source.sendSuccess(() -> Component.literal("Found " + totalActions + " actions to preview.")
+                    .withStyle(ChatFormatting.AQUA), false);
             
-            ServerPlayerEntity player = source.getPlayer();
+            ServerPlayer player = source.getPlayer();
             int ghostBlocksShown = 0;
             
             // Send ghost blocks for block changes
@@ -814,21 +814,21 @@ public class MineTracerCommand {
             }
             
             final int finalGhostBlocksShown = ghostBlocksShown;
-            source.sendFeedback(() -> Text.literal("Showing " + finalGhostBlocksShown + " ghost blocks. They will disappear when you relog or move away.")
-                    .formatted(Formatting.GRAY), false);
-            source.sendFeedback(() -> Text.literal("Run without #preview to execute the rollback.")
-                    .formatted(Formatting.YELLOW), false);
+            source.sendSuccess(() -> Component.literal("Showing " + finalGhostBlocksShown + " ghost blocks. They will disappear when you relog or move away.")
+                    .withStyle(ChatFormatting.GRAY), false);
+            source.sendSuccess(() -> Component.literal("Run without #preview to execute the rollback.")
+                    .withStyle(ChatFormatting.YELLOW), false);
             return Command.SINGLE_SUCCESS;
         }
         
-        source.sendFeedback(() -> Text.literal("[MineTracer] Found " + totalActions + " actions to rollback.")
-                .formatted(Formatting.AQUA), false);
+        source.sendSuccess(() -> Component.literal("[MineTracer] Found " + totalActions + " actions to rollback.")
+                .withStyle(ChatFormatting.AQUA), false);
         if (actionFilters.isEmpty()) {
             blockLogs.sort((a, b) -> b.timestamp.compareTo(a.timestamp));
             signLogs.sort((a, b) -> b.timestamp.compareTo(a.timestamp));
             containerLogs.sort((a, b) -> b.timestamp.compareTo(a.timestamp));
-            source.sendFeedback(() -> Text.literal("[MineTracer] Processing rollback in reverse chronological order (newest actions first).")
-                    .formatted(Formatting.GRAY), false);
+            source.sendSuccess(() -> Component.literal("[MineTracer] Processing rollback in reverse chronological order (newest actions first).")
+                    .withStyle(ChatFormatting.GRAY), false);
         }
         if (actionFilters.isEmpty()) {
             int brokeEntriesProcessed = 0;
@@ -956,25 +956,25 @@ public class MineTracerCommand {
         if (successfulRollbacks > 0 || failedRollbacks > 0) {
             final int finalSuccessfulRollbacks = successfulRollbacks;
             final int finalFailedRollbacks = failedRollbacks;
-            source.sendFeedback(() -> Text.literal(
+            source.sendSuccess(() -> Component.literal(
                     "[MineTracer] Rollback complete: " + finalSuccessfulRollbacks + " actions restored, " +
                             finalFailedRollbacks + " failed.")
-                    .formatted(Formatting.GREEN), false);
+                    .withStyle(ChatFormatting.GREEN), false);
             
             // Store operation for undo
             try {
-                UUID playerId = source.getPlayer().getUuid();
+                UUID playerId = source.getPlayer().getUUID();
                 UndoOperation undoOp = new UndoOperation("rollback", blockLogs, signLogs, containerLogs);
                 lastOperations.put(playerId, undoOp);
-                source.sendFeedback(() -> Text.literal(
+                source.sendSuccess(() -> Component.literal(
                     "[MineTracer] Use /minetracer undo to revert this rollback.")
-                    .formatted(Formatting.GRAY), false);
+                    .withStyle(ChatFormatting.GRAY), false);
             } catch (Exception e) {
                 // Player might not exist in some contexts
             }
         } else {
-            source.sendFeedback(
-                    () -> Text.literal("[MineTracer] No actions found to rollback.").formatted(Formatting.YELLOW),
+            source.sendSuccess(
+                    () -> Component.literal("[MineTracer] No actions found to rollback.").withStyle(ChatFormatting.YELLOW),
                     false);
         }
         return Command.SINGLE_SUCCESS;
@@ -984,10 +984,10 @@ public class MineTracerCommand {
      * Restore command - reapplies actions that were rolled back
      * This is the inverse of rollback (undoing the undo)
      */
-    public static int restore(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
+    public static int restore(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
         if (!Permissions.check(source, "minetracer.command.restore", 2)) {
-            source.sendError(Text.literal("You do not have permission to use this command."));
+            source.sendFailure(Component.literal("You do not have permission to use this command."));
             return 0;
         }
         String arg = StringArgumentType.getString(ctx, "arg");
@@ -1036,7 +1036,7 @@ public class MineTracerCommand {
             }
         }
         
-        BlockPos playerPos = source.getPlayer().getBlockPos();
+        BlockPos playerPos = source.getPlayer().blockPosition();
         Instant cutoff = null;
         if (timeArg != null) {
             long seconds = parseTimeArg(timeArg);
@@ -1049,13 +1049,13 @@ public class MineTracerCommand {
         int restrictionCount = (hasRange ? 1 : 0) + (hasTime ? 1 : 0) + (hasUser ? 1 : 0);
         
         if (restrictionCount < 2) {
-            source.sendError(Text.literal(
+            source.sendFailure(Component.literal(
                     "Restore requires at least 2 of these filters: range:<blocks>, time:<duration>, user:<player>. Add #preview to see what would be restored."));
             return Command.SINGLE_SUCCESS;
         }
         
         // Use the new database lookup system (same as lookup and rollback commands)
-        String worldName = ((com.minetracer.mixin.EntityAccessor)source.getPlayer()).getWorld().getRegistryKey().getValue().toString();
+        String worldName = ((com.minetracer.mixin.EntityAccessor)source.getPlayer()).getWorld().dimension().identifier().toString();
         List<MineTracerLookup.BlockLogEntry> blockLogs;
         List<MineTracerLookup.SignLogEntry> signLogs;
         List<MineTracerLookup.ContainerLogEntry> containerLogs;
@@ -1065,7 +1065,7 @@ public class MineTracerCommand {
             signLogs = MineTracerLookup.getSignLogsInRangeAsync(playerPos, range, userFilter, worldName).get();
             containerLogs = MineTracerLookup.getContainerLogsInRangeAsync(playerPos, range, userFilter, worldName).get();
         } catch (Exception e) {
-            source.sendError(Text.literal("[MineTracer] Error querying database: " + e.getMessage()));
+            source.sendFailure(Component.literal("[MineTracer] Error querying database: " + e.getMessage()));
             e.printStackTrace();
             return Command.SINGLE_SUCCESS;
         }
@@ -1094,7 +1094,7 @@ public class MineTracerCommand {
             final String includeItemFinal = includeItem;
             containerLogs.removeIf(
                     entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
-                            Registries.ITEM.getId(entry.stack.getItem()).toString(), includeItemFinal));
+                            BuiltInRegistries.ITEM.getKey(entry.stack.getItem()).toString(), includeItemFinal));
             blockLogs.removeIf(entry -> !com.minetracer.features.minetracer.util.MaterialMatcher.matchesIncludeFilter(
                     entry.blockId, includeItemFinal));
         }
@@ -1103,39 +1103,39 @@ public class MineTracerCommand {
             final String excludeItemFinal = excludeItem;
             containerLogs.removeIf(
                     entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
-                            Registries.ITEM.getId(entry.stack.getItem()).toString(), excludeItemFinal));
+                            BuiltInRegistries.ITEM.getKey(entry.stack.getItem()).toString(), excludeItemFinal));
             blockLogs.removeIf(entry -> com.minetracer.features.minetracer.util.MaterialMatcher.matchesExcludeFilter(
                     entry.blockId, excludeItemFinal));
         }
         
         int totalActions = containerLogs.size() + blockLogs.size() + signLogs.size();
         if (totalActions == 0) {
-            source.sendFeedback(() -> Text.literal("[MineTracer] No actions found matching the specified filters.")
-                    .formatted(Formatting.YELLOW), false);
+            source.sendSuccess(() -> Component.literal("[MineTracer] No actions found matching the specified filters.")
+                    .withStyle(ChatFormatting.YELLOW), false);
             return Command.SINGLE_SUCCESS;
         }
         
         // Preview mode - show what would be restored without actually doing it
         if (previewMode) {
-            source.sendFeedback(() -> Text.literal("[MineTracer] Preview: Would restore " + totalActions + " actions:")
-                    .formatted(Formatting.AQUA), false);
-            source.sendFeedback(() -> Text.literal("  - " + blockLogs.size() + " block changes")
-                    .formatted(Formatting.GRAY), false);
-            source.sendFeedback(() -> Text.literal("  - " + containerLogs.size() + " container transactions")
-                    .formatted(Formatting.GRAY), false);
-            source.sendFeedback(() -> Text.literal("  - " + signLogs.size() + " sign edits")
-                    .formatted(Formatting.GRAY), false);
-            source.sendFeedback(() -> Text.literal("Remove #preview to execute the restore.")
-                    .formatted(Formatting.YELLOW), false);
+            source.sendSuccess(() -> Component.literal("[MineTracer] Preview: Would restore " + totalActions + " actions:")
+                    .withStyle(ChatFormatting.AQUA), false);
+            source.sendSuccess(() -> Component.literal("  - " + blockLogs.size() + " block changes")
+                    .withStyle(ChatFormatting.GRAY), false);
+            source.sendSuccess(() -> Component.literal("  - " + containerLogs.size() + " container transactions")
+                    .withStyle(ChatFormatting.GRAY), false);
+            source.sendSuccess(() -> Component.literal("  - " + signLogs.size() + " sign edits")
+                    .withStyle(ChatFormatting.GRAY), false);
+            source.sendSuccess(() -> Component.literal("Remove #preview to execute the restore.")
+                    .withStyle(ChatFormatting.YELLOW), false);
             return Command.SINGLE_SUCCESS;
         }
         
         int successfulRestores = 0;
         int failedRestores = 0;
-        ServerWorld world = source.getWorld();
+        ServerLevel world = source.getLevel();
         
-        source.sendFeedback(() -> Text.literal("[MineTracer] Found " + totalActions + " actions to restore.")
-                .formatted(Formatting.AQUA), false);
+        source.sendSuccess(() -> Component.literal("[MineTracer] Found " + totalActions + " actions to restore.")
+                .withStyle(ChatFormatting.AQUA), false);
         
         // Restore = inverse of rollback, so we apply the original actions
         // placed -> place block, broke -> remove block
@@ -1185,25 +1185,25 @@ public class MineTracerCommand {
         if (successfulRestores > 0 || failedRestores > 0) {
             final int finalSuccessfulRestores = successfulRestores;
             final int finalFailedRestores = failedRestores;
-            source.sendFeedback(() -> Text.literal(
+            source.sendSuccess(() -> Component.literal(
                     "[MineTracer] Restore complete: " + finalSuccessfulRestores + " actions reapplied, " +
                             finalFailedRestores + " failed.")
-                    .formatted(Formatting.GREEN), false);
+                    .withStyle(ChatFormatting.GREEN), false);
             
             // Store operation for undo
             try {
-                UUID playerId = source.getPlayer().getUuid();
+                UUID playerId = source.getPlayer().getUUID();
                 UndoOperation undoOp = new UndoOperation("restore", blockLogs, signLogs, containerLogs);
                 lastOperations.put(playerId, undoOp);
-                source.sendFeedback(() -> Text.literal(
+                source.sendSuccess(() -> Component.literal(
                     "[MineTracer] Use /minetracer undo to revert this restore.")
-                    .formatted(Formatting.GRAY), false);
+                    .withStyle(ChatFormatting.GRAY), false);
             } catch (Exception e) {
                 // Player might not exist in some contexts
             }
         } else {
-            source.sendFeedback(
-                    () -> Text.literal("[MineTracer] No actions found to restore.").formatted(Formatting.YELLOW),
+            source.sendSuccess(
+                    () -> Component.literal("[MineTracer] No actions found to restore.").withStyle(ChatFormatting.YELLOW),
                     false);
         }
         
@@ -1213,35 +1213,35 @@ public class MineTracerCommand {
     /**
      * Undo command - reverts the last rollback or restore operation
      */
-    public static int undo(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
+    public static int undo(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
         if (!Permissions.check(source, "minetracer.command.undo", 2)) {
-            source.sendError(Text.literal("You do not have permission to use this command."));
+            source.sendFailure(Component.literal("You do not have permission to use this command."));
             return 0;
         }
         
         try {
-            UUID playerId = source.getPlayer().getUuid();
+            UUID playerId = source.getPlayer().getUUID();
             UndoOperation lastOp = lastOperations.get(playerId);
             
             if (lastOp == null) {
-                source.sendError(Text.literal("[MineTracer] No recent rollback or restore to undo."));
+                source.sendFailure(Component.literal("[MineTracer] No recent rollback or restore to undo."));
                 return 0;
             }
             
             // Check if operation is recent (within 5 minutes)
             long minutesAgo = Duration.between(lastOp.timestamp, Instant.now()).toMinutes();
             if (minutesAgo > 5) {
-                source.sendError(Text.literal("[MineTracer] Last operation was " + minutesAgo + " minutes ago. Undo is only available for recent operations (within 5 minutes)."));
+                source.sendFailure(Component.literal("[MineTracer] Last operation was " + minutesAgo + " minutes ago. Undo is only available for recent operations (within 5 minutes)."));
                 return 0;
             }
             
             int successfulUndos = 0;
             int failedUndos = 0;
-            ServerWorld world = source.getWorld();
+            ServerLevel world = source.getLevel();
             
-            source.sendFeedback(() -> Text.literal("[MineTracer] Undoing last " + lastOp.type + " operation...")
-                    .formatted(Formatting.AQUA), false);
+            source.sendSuccess(() -> Component.literal("[MineTracer] Undoing last " + lastOp.type + " operation...")
+                    .withStyle(ChatFormatting.AQUA), false);
             
             // Undo rollback = restore
             // Undo restore = rollback
@@ -1320,13 +1320,13 @@ public class MineTracerCommand {
             
             final int finalSuccessfulUndos = successfulUndos;
             final int finalFailedUndos = failedUndos;
-            source.sendFeedback(() -> Text.literal(
+            source.sendSuccess(() -> Component.literal(
                     "[MineTracer] Undo complete: " + finalSuccessfulUndos + " changes reverted, " +
                             finalFailedUndos + " failed.")
-                    .formatted(Formatting.GREEN), false);
+                    .withStyle(ChatFormatting.GREEN), false);
             
         } catch (Exception e) {
-            source.sendError(Text.literal("[MineTracer] Failed to undo: " + e.getMessage()));
+            source.sendFailure(Component.literal("[MineTracer] Failed to undo: " + e.getMessage()));
             e.printStackTrace();
             return 0;
         }
@@ -1338,33 +1338,33 @@ public class MineTracerCommand {
      * Gets the proper inventory for a container at the given position.
      * Handles double chests by using the BlockState's inventory provider.
      */
-    private static Inventory getContainerInventory(ServerWorld world, BlockPos pos) {
+    private static Container getContainerInventory(ServerLevel world, BlockPos pos) {
         BlockState blockState = world.getBlockState(pos);
         
         // For ChestBlock (including double chests), use the block's inventory method
-        if (blockState.getBlock() instanceof net.minecraft.block.ChestBlock) {
-            net.minecraft.block.ChestBlock chestBlock = (net.minecraft.block.ChestBlock) blockState.getBlock();
+        if (blockState.getBlock() instanceof net.minecraft.world.level.block.ChestBlock) {
+            net.minecraft.world.level.block.ChestBlock chestBlock = (net.minecraft.world.level.block.ChestBlock) blockState.getBlock();
             // This properly handles double chests by returning the combined 54-slot inventory
-            return net.minecraft.block.ChestBlock.getInventory(chestBlock, blockState, world, pos, true);
+            return net.minecraft.world.level.block.ChestBlock.getContainer(chestBlock, blockState, world, pos, true);
         }
         
         // For other containers, use the BlockEntity directly
-        net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
-        if (blockEntity instanceof Inventory) {
-            return (Inventory) blockEntity;
+        net.minecraft.world.level.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
+        if (blockEntity instanceof Container) {
+            return (Container) blockEntity;
         }
         
         return null;
     }
     
-    private static boolean performWithdrawalRollback(ServerWorld world, MineTracerLookup.ContainerLogEntry entry) {
+    private static boolean performWithdrawalRollback(ServerLevel world, MineTracerLookup.ContainerLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
             ItemStack stackToRestore = entry.stack.copy();
-            Inventory inventory = getContainerInventory(world, pos);
+            Container inventory = getContainerInventory(world, pos);
             if (inventory != null) {
                 ItemStack remaining = addItemToInventory(inventory, stackToRestore);
-                inventory.markDirty();
+                inventory.setChanged();
                 boolean success = remaining.getCount() < stackToRestore.getCount();
                 
                 // CoreProtect-style: Mark as rolled back in database
@@ -1379,14 +1379,14 @@ public class MineTracerCommand {
             return false;
         }
     }
-    private static boolean performDepositRollback(ServerWorld world, MineTracerLookup.ContainerLogEntry entry) {
+    private static boolean performDepositRollback(ServerLevel world, MineTracerLookup.ContainerLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
             ItemStack stackToRemove = entry.stack.copy();
-            Inventory inventory = getContainerInventory(world, pos);
+            Container inventory = getContainerInventory(world, pos);
             if (inventory != null) {
                 ItemStack remaining = removeItemFromInventory(inventory, stackToRemove);
-                inventory.markDirty();
+                inventory.setChanged();
                 boolean success = remaining.getCount() < stackToRemove.getCount();
                 
                 // CoreProtect-style: Mark as rolled back in database
@@ -1401,57 +1401,57 @@ public class MineTracerCommand {
             return false;
         }
     }
-    private static ItemStack removeItemFromInventory(Inventory inventory, ItemStack stackToRemove) {
+    private static ItemStack removeItemFromInventory(Container inventory, ItemStack stackToRemove) {
         ItemStack remaining = stackToRemove.copy();
-        for (int i = 0; i < inventory.size() && !remaining.isEmpty(); i++) {
-            ItemStack existingStack = inventory.getStack(i);
-            if (!existingStack.isEmpty() && ItemStack.areItemsAndComponentsEqual(existingStack, remaining)) {
+        for (int i = 0; i < inventory.getContainerSize() && !remaining.isEmpty(); i++) {
+            ItemStack existingStack = inventory.getItem(i);
+            if (!existingStack.isEmpty() && ItemStack.isSameItemSameComponents(existingStack, remaining)) {
                 int canRemove = Math.min(existingStack.getCount(), remaining.getCount());
                 if (canRemove > 0) {
-                    existingStack.decrement(canRemove);
-                    remaining.decrement(canRemove);
+                    existingStack.shrink(canRemove);
+                    remaining.shrink(canRemove);
                     if (existingStack.isEmpty()) {
-                        inventory.setStack(i, ItemStack.EMPTY);
+                        inventory.setItem(i, ItemStack.EMPTY);
                     } else {
-                        inventory.setStack(i, existingStack);
+                        inventory.setItem(i, existingStack);
                     }
                 }
             }
         }
         return remaining;
     }
-    private static ItemStack addItemToInventory(Inventory inventory, ItemStack stack) {
+    private static ItemStack addItemToInventory(Container inventory, ItemStack stack) {
         ItemStack remaining = stack.copy();
-        for (int i = 0; i < inventory.size() && !remaining.isEmpty(); i++) {
-            ItemStack existingStack = inventory.getStack(i);
-            if (!existingStack.isEmpty() && ItemStack.areItemsAndComponentsEqual(existingStack, remaining)) {
-                int maxStackSize = existingStack.getMaxCount();
+        for (int i = 0; i < inventory.getContainerSize() && !remaining.isEmpty(); i++) {
+            ItemStack existingStack = inventory.getItem(i);
+            if (!existingStack.isEmpty() && ItemStack.isSameItemSameComponents(existingStack, remaining)) {
+                int maxStackSize = existingStack.getMaxStackSize();
                 int canAdd = maxStackSize - existingStack.getCount();
                 if (canAdd > 0) {
                     int toAdd = Math.min(canAdd, remaining.getCount());
-                    existingStack.increment(toAdd);
-                    remaining.decrement(toAdd);
-                    inventory.setStack(i, existingStack);
+                    existingStack.grow(toAdd);
+                    remaining.shrink(toAdd);
+                    inventory.setItem(i, existingStack);
                 }
             }
         }
-        for (int i = 0; i < inventory.size() && !remaining.isEmpty(); i++) {
-            ItemStack existingStack = inventory.getStack(i);
+        for (int i = 0; i < inventory.getContainerSize() && !remaining.isEmpty(); i++) {
+            ItemStack existingStack = inventory.getItem(i);
             if (existingStack.isEmpty()) {
-                int maxStackSize = remaining.getMaxCount();
+                int maxStackSize = remaining.getMaxStackSize();
                 int toPlace = Math.min(maxStackSize, remaining.getCount());
                 ItemStack toSet = remaining.copy();
                 toSet.setCount(toPlace);
-                inventory.setStack(i, toSet);
-                remaining.decrement(toPlace);
+                inventory.setItem(i, toSet);
+                remaining.shrink(toPlace);
             }
         }
         return remaining;
     }
-    private static boolean performBlockBreakRollback(ServerWorld world, MineTracerLookup.BlockLogEntry entry) {
+    private static boolean performBlockBreakRollback(ServerLevel world, MineTracerLookup.BlockLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
-            world.setBlockState(pos, net.minecraft.block.Blocks.AIR.getDefaultState());
+            world.setBlockAndUpdate(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
             
             // CoreProtect-style: Mark as rolled back in database
             markBlockEntryRolledBack(entry, world);
@@ -1461,16 +1461,16 @@ public class MineTracerCommand {
             return false;
         }
     }
-    private static boolean performBlockPlaceRollback(ServerWorld world, MineTracerLookup.BlockLogEntry entry) {
+    private static boolean performBlockPlaceRollback(ServerLevel world, MineTracerLookup.BlockLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
-            net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK
-                    .get(net.minecraft.util.Identifier.of(entry.blockId));
-            if (block == null || block == net.minecraft.block.Blocks.AIR) {
+            net.minecraft.world.level.block.Block block = net.minecraft.core.registries.BuiltInRegistries.BLOCK
+                    .getValue(net.minecraft.resources.Identifier.parse(entry.blockId));
+            if (block == null || block == net.minecraft.world.level.block.Blocks.AIR) {
                 return false;
             }
 
-            net.minecraft.block.BlockState blockState = block.getDefaultState();
+            net.minecraft.world.level.block.state.BlockState blockState = block.defaultBlockState();
 
             // Apply stored block state properties.
             // Handles three formats in priority order:
@@ -1480,7 +1480,7 @@ public class MineTracerCommand {
             String nbt = entry.nbt;
             if (nbt != null && !nbt.isEmpty()) {
                 String propsSection = null;
-                net.minecraft.nbt.NbtCompound blockEntityNbt = null;
+                net.minecraft.nbt.CompoundTag blockEntityNbt = null;
 
                 if (nbt.startsWith("[")) {
                     // Format 1: CoreProtect-style bracket properties
@@ -1490,16 +1490,16 @@ public class MineTracerCommand {
                     }
                 } else if (nbt.startsWith("{")) {
                     // Format 2: SNBT
-                    net.minecraft.nbt.NbtCompound compound = com.minetracer.features.minetracer.util.NbtCompatHelper.parseNbtString(nbt);
-                    if (compound.contains("Properties") && compound.get("Properties") instanceof net.minecraft.nbt.NbtCompound props) {
+                    net.minecraft.nbt.CompoundTag compound = com.minetracer.features.minetracer.util.NbtCompatHelper.parseNbtString(nbt);
+                    if (compound.contains("Properties") && compound.get("Properties") instanceof net.minecraft.nbt.CompoundTag props) {
                         StringBuilder sb = new StringBuilder();
-                        for (String key : props.getKeys()) {
+                        for (String key : props.keySet()) {
                             if (sb.length() > 0) sb.append(',');
                             sb.append(key).append('=').append(props.getString(key).orElse(""));
                         }
                         propsSection = sb.toString();
                     }
-                    if (compound.contains("BlockEntityTag") && compound.get("BlockEntityTag") instanceof net.minecraft.nbt.NbtCompound bet) {
+                    if (compound.contains("BlockEntityTag") && compound.get("BlockEntityTag") instanceof net.minecraft.nbt.CompoundTag bet) {
                         blockEntityNbt = bet;
                     }
                 } else if (nbt.startsWith("Block{")) {
@@ -1517,7 +1517,7 @@ public class MineTracerCommand {
                         if (pair.length == 2) {
                             String key = pair[0].trim();
                             String value = pair[1].trim();
-                            for (net.minecraft.state.property.Property<?> prop : blockState.getProperties()) {
+                            for (net.minecraft.world.level.block.state.properties.Property<?> prop : blockState.getProperties()) {
                                 if (prop.getName().equals(key)) {
                                     blockState = setBlockStateProperty(blockState, prop, value);
                                     break;
@@ -1530,19 +1530,19 @@ public class MineTracerCommand {
                 // Use FORCE_STATE so that getStateForNeighborUpdate() does NOT reset
                 // a chest's type (e.g. LEFT→SINGLE) because the matching half is not
                 // in the world yet.  NOTIFY_ALL is still set so clients see the change.
-                int placeFlags = (block instanceof net.minecraft.block.ChestBlock)
-                        ? (net.minecraft.block.Block.FORCE_STATE | net.minecraft.block.Block.NOTIFY_ALL)
-                        : net.minecraft.block.Block.NOTIFY_ALL;
+                int placeFlags = (block instanceof net.minecraft.world.level.block.ChestBlock)
+                        ? (net.minecraft.world.level.block.Block.UPDATE_KNOWN_SHAPE | net.minecraft.world.level.block.Block.UPDATE_ALL)
+                        : net.minecraft.world.level.block.Block.UPDATE_ALL;
 
-                world.setBlockState(pos, blockState, placeFlags);
+                world.setBlock(pos, blockState, placeFlags);
 
                 // If this is one half of a double chest, ensure the neighbour is also correctly set
                 // so Minecraft connects the two halves. This must happen before we restore inventory.
-                if (block instanceof net.minecraft.block.ChestBlock &&
-                        blockState.contains(net.minecraft.block.ChestBlock.CHEST_TYPE)) {
-                    net.minecraft.block.enums.ChestType chestType =
-                            blockState.get(net.minecraft.block.ChestBlock.CHEST_TYPE);
-                    if (chestType != net.minecraft.block.enums.ChestType.SINGLE) {
+                if (block instanceof net.minecraft.world.level.block.ChestBlock &&
+                        blockState.hasProperty(net.minecraft.world.level.block.ChestBlock.TYPE)) {
+                    net.minecraft.world.level.block.state.properties.ChestType chestType =
+                            blockState.getValue(net.minecraft.world.level.block.ChestBlock.TYPE);
+                    if (chestType != net.minecraft.world.level.block.state.properties.ChestType.SINGLE) {
                         linkDoubleChestNeighbour(world, pos, blockState, block);
                     }
                 }
@@ -1554,51 +1554,51 @@ public class MineTracerCommand {
                     // Re-place to ensure a fresh block entity exists (handles cases where
                     // the world already had a different block entity at this pos)
                     world.removeBlockEntity(pos);
-                    world.setBlockState(pos, blockState, placeFlags);
-                    net.minecraft.block.entity.BlockEntity newBE = world.getBlockEntity(pos);
-                    if (newBE instanceof net.minecraft.inventory.Inventory inv) {
+                    world.setBlock(pos, blockState, placeFlags);
+                    net.minecraft.world.level.block.entity.BlockEntity newBE = world.getBlockEntity(pos);
+                    if (newBE instanceof net.minecraft.world.Container inv) {
                         // Clear first so stale items don't remain
-                        for (int i = 0; i < inv.size(); i++) {
-                            inv.setStack(i, net.minecraft.item.ItemStack.EMPTY);
+                        for (int i = 0; i < inv.getContainerSize(); i++) {
+                            inv.setItem(i, net.minecraft.world.item.ItemStack.EMPTY);
                         }
-                        java.util.Optional<net.minecraft.nbt.NbtList> itemsOpt = blockEntityNbt.getList("Items");
+                        java.util.Optional<net.minecraft.nbt.ListTag> itemsOpt = blockEntityNbt.getList("Items");
                         if (itemsOpt.isPresent()) {
                             for (int i = 0; i < itemsOpt.get().size(); i++) {
-                                if (itemsOpt.get().get(i) instanceof net.minecraft.nbt.NbtCompound itemNbt) {
+                                if (itemsOpt.get().get(i) instanceof net.minecraft.nbt.CompoundTag itemNbt) {
                                     java.util.Optional<Byte> slotOpt = itemNbt.getByte("Slot");
                                     if (slotOpt.isPresent()) {
                                         int slot = slotOpt.get() & 255;
-                                        if (slot < inv.size()) {
+                                        if (slot < inv.getContainerSize()) {
                                             // Strip "Slot" before passing to ItemStack.CODEC — the CODEC only
                                             // knows about id/count/components, not the container-specific Slot key
-                                            net.minecraft.nbt.NbtCompound itemOnlyNbt = itemNbt.copy();
+                                            net.minecraft.nbt.CompoundTag itemOnlyNbt = itemNbt.copy();
                                             itemOnlyNbt.remove("Slot");
-                                            net.minecraft.item.ItemStack stack =
-                                                com.minetracer.features.minetracer.util.NbtCompatHelper.itemStackFromNbt(itemOnlyNbt, world.getRegistryManager());
+                                            net.minecraft.world.item.ItemStack stack =
+                                                com.minetracer.features.minetracer.util.NbtCompatHelper.itemStackFromNbt(itemOnlyNbt, world.registryAccess());
                                             if (!stack.isEmpty()) {
-                                                inv.setStack(slot, stack);
+                                                inv.setItem(slot, stack);
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                        inv.markDirty();
+                        inv.setChanged();
                     }
-                    if (newBE != null) newBE.markDirty();
-                    world.updateListeners(pos, blockState, blockState, net.minecraft.block.Block.NOTIFY_ALL);
+                    if (newBE != null) newBE.setChanged();
+                    world.sendBlockUpdated(pos, blockState, blockState, net.minecraft.world.level.block.Block.UPDATE_ALL);
                 }
             } else {
-                int placeFlags = (block instanceof net.minecraft.block.ChestBlock)
-                        ? (net.minecraft.block.Block.FORCE_STATE | net.minecraft.block.Block.NOTIFY_ALL)
-                        : net.minecraft.block.Block.NOTIFY_ALL;
-                world.setBlockState(pos, blockState, placeFlags);
+                int placeFlags = (block instanceof net.minecraft.world.level.block.ChestBlock)
+                        ? (net.minecraft.world.level.block.Block.UPDATE_KNOWN_SHAPE | net.minecraft.world.level.block.Block.UPDATE_ALL)
+                        : net.minecraft.world.level.block.Block.UPDATE_ALL;
+                world.setBlock(pos, blockState, placeFlags);
                 // Link double chests in the no-NBT path too
-                if (block instanceof net.minecraft.block.ChestBlock &&
-                        blockState.contains(net.minecraft.block.ChestBlock.CHEST_TYPE)) {
-                    net.minecraft.block.enums.ChestType chestType =
-                            blockState.get(net.minecraft.block.ChestBlock.CHEST_TYPE);
-                    if (chestType != net.minecraft.block.enums.ChestType.SINGLE) {
+                if (block instanceof net.minecraft.world.level.block.ChestBlock &&
+                        blockState.hasProperty(net.minecraft.world.level.block.ChestBlock.TYPE)) {
+                    net.minecraft.world.level.block.state.properties.ChestType chestType =
+                            blockState.getValue(net.minecraft.world.level.block.ChestBlock.TYPE);
+                    if (chestType != net.minecraft.world.level.block.state.properties.ChestType.SINGLE) {
                         linkDoubleChestNeighbour(world, pos, blockState, block);
                     }
                 }
@@ -1621,40 +1621,40 @@ public class MineTracerCommand {
      * pair of matching same-facing chests.  This runs as a post-rollback second pass,
      * guaranteeing correctness regardless of placement order or NBT accuracy.
      */
-    private static void relinkRestoredDoubleChests(ServerWorld world,
+    private static void relinkRestoredDoubleChests(ServerLevel world,
             java.util.List<MineTracerLookup.BlockLogEntry> blockLogs) {
-        java.util.Set<net.minecraft.util.math.BlockPos> processed = new java.util.HashSet<>();
+        java.util.Set<net.minecraft.core.BlockPos> processed = new java.util.HashSet<>();
         for (MineTracerLookup.BlockLogEntry entry : blockLogs) {
-            net.minecraft.util.math.BlockPos pos = entry.pos;
+            net.minecraft.core.BlockPos pos = entry.pos;
             if (processed.contains(pos)) continue;
-            net.minecraft.block.BlockState state = world.getBlockState(pos);
-            net.minecraft.block.Block blk = state.getBlock();
-            if (!(blk instanceof net.minecraft.block.ChestBlock)) continue;
-            if (!state.contains(net.minecraft.block.ChestBlock.CHEST_TYPE)) continue;
-            if (!state.contains(net.minecraft.block.ChestBlock.FACING)) continue;
-            net.minecraft.util.math.Direction facing = state.get(net.minecraft.block.ChestBlock.FACING);
+            net.minecraft.world.level.block.state.BlockState state = world.getBlockState(pos);
+            net.minecraft.world.level.block.Block blk = state.getBlock();
+            if (!(blk instanceof net.minecraft.world.level.block.ChestBlock)) continue;
+            if (!state.hasProperty(net.minecraft.world.level.block.ChestBlock.TYPE)) continue;
+            if (!state.hasProperty(net.minecraft.world.level.block.ChestBlock.FACING)) continue;
+            net.minecraft.core.Direction facing = state.getValue(net.minecraft.world.level.block.ChestBlock.FACING);
             // Only check the two directions perpendicular to facing
-            net.minecraft.util.math.Direction[] perp = {
-                facing.rotateYClockwise(), facing.rotateYCounterclockwise()
+            net.minecraft.core.Direction[] perp = {
+                facing.getClockWise(), facing.getCounterClockWise()
             };
             boolean linked = false;
-            for (net.minecraft.util.math.Direction dir : perp) {
-                net.minecraft.util.math.BlockPos neighbourPos = pos.offset(dir);
-                net.minecraft.block.BlockState neighbourState = world.getBlockState(neighbourPos);
+            for (net.minecraft.core.Direction dir : perp) {
+                net.minecraft.core.BlockPos neighbourPos = pos.relative(dir);
+                net.minecraft.world.level.block.state.BlockState neighbourState = world.getBlockState(neighbourPos);
                 if (neighbourState.getBlock() == blk
-                        && neighbourState.contains(net.minecraft.block.ChestBlock.FACING)
-                        && neighbourState.get(net.minecraft.block.ChestBlock.FACING) == facing) {
+                        && neighbourState.hasProperty(net.minecraft.world.level.block.ChestBlock.FACING)
+                        && neighbourState.getValue(net.minecraft.world.level.block.ChestBlock.FACING) == facing) {
                     // dir == rotateYClockwise → neighbour is to the right → this block is LEFT
-                    net.minecraft.block.enums.ChestType myType =
-                            (dir == perp[0]) ? net.minecraft.block.enums.ChestType.LEFT
-                                             : net.minecraft.block.enums.ChestType.RIGHT;
-                    net.minecraft.block.enums.ChestType neighbourType =
-                            (dir == perp[0]) ? net.minecraft.block.enums.ChestType.RIGHT
-                                             : net.minecraft.block.enums.ChestType.LEFT;
-                    int flags = net.minecraft.block.Block.FORCE_STATE | net.minecraft.block.Block.NOTIFY_ALL;
-                    world.setBlockState(pos, state.with(net.minecraft.block.ChestBlock.CHEST_TYPE, myType), flags);
-                    world.setBlockState(neighbourPos,
-                            neighbourState.with(net.minecraft.block.ChestBlock.CHEST_TYPE, neighbourType), flags);
+                    net.minecraft.world.level.block.state.properties.ChestType myType =
+                            (dir == perp[0]) ? net.minecraft.world.level.block.state.properties.ChestType.LEFT
+                                             : net.minecraft.world.level.block.state.properties.ChestType.RIGHT;
+                    net.minecraft.world.level.block.state.properties.ChestType neighbourType =
+                            (dir == perp[0]) ? net.minecraft.world.level.block.state.properties.ChestType.RIGHT
+                                             : net.minecraft.world.level.block.state.properties.ChestType.LEFT;
+                    int flags = net.minecraft.world.level.block.Block.UPDATE_KNOWN_SHAPE | net.minecraft.world.level.block.Block.UPDATE_ALL;
+                    world.setBlock(pos, state.setValue(net.minecraft.world.level.block.ChestBlock.TYPE, myType), flags);
+                    world.setBlock(neighbourPos,
+                            neighbourState.setValue(net.minecraft.world.level.block.ChestBlock.TYPE, neighbourType), flags);
                     processed.add(pos);
                     processed.add(neighbourPos);
                     linked = true;
@@ -1663,12 +1663,12 @@ public class MineTracerCommand {
             }
             if (!linked) {
                 // No matching neighbour — ensure this chest is SINGLE
-                if (state.get(net.minecraft.block.ChestBlock.CHEST_TYPE)
-                        != net.minecraft.block.enums.ChestType.SINGLE) {
-                    world.setBlockState(pos,
-                            state.with(net.minecraft.block.ChestBlock.CHEST_TYPE,
-                                    net.minecraft.block.enums.ChestType.SINGLE),
-                            net.minecraft.block.Block.FORCE_STATE | net.minecraft.block.Block.NOTIFY_ALL);
+                if (state.getValue(net.minecraft.world.level.block.ChestBlock.TYPE)
+                        != net.minecraft.world.level.block.state.properties.ChestType.SINGLE) {
+                    world.setBlock(pos,
+                            state.setValue(net.minecraft.world.level.block.ChestBlock.TYPE,
+                                    net.minecraft.world.level.block.state.properties.ChestType.SINGLE),
+                            net.minecraft.world.level.block.Block.UPDATE_KNOWN_SHAPE | net.minecraft.world.level.block.Block.UPDATE_ALL);
                 }
                 processed.add(pos);
             }
@@ -1681,91 +1681,91 @@ public class MineTracerCommand {
      * This is necessary because world.setBlockState does NOT trigger the placement
      * logic that normally auto-connects adjacent chests.
      */
-    private static void linkDoubleChestNeighbour(ServerWorld world, BlockPos pos,
-            net.minecraft.block.BlockState blockState, net.minecraft.block.Block block) {
-        net.minecraft.block.enums.ChestType myType = blockState.get(net.minecraft.block.ChestBlock.CHEST_TYPE);
-        net.minecraft.util.math.Direction facing = blockState.get(net.minecraft.block.ChestBlock.FACING);
+    private static void linkDoubleChestNeighbour(ServerLevel world, BlockPos pos,
+            net.minecraft.world.level.block.state.BlockState blockState, net.minecraft.world.level.block.Block block) {
+        net.minecraft.world.level.block.state.properties.ChestType myType = blockState.getValue(net.minecraft.world.level.block.ChestBlock.TYPE);
+        net.minecraft.core.Direction facing = blockState.getValue(net.minecraft.world.level.block.ChestBlock.FACING);
 
         // Compute direction toward the neighbour from this half's perspective
-        net.minecraft.util.math.Direction toNeighbour;
-        net.minecraft.block.enums.ChestType neighbourNeedsType;
-        if (myType == net.minecraft.block.enums.ChestType.LEFT) {
-            toNeighbour = facing.rotateYClockwise();
-            neighbourNeedsType = net.minecraft.block.enums.ChestType.RIGHT;
+        net.minecraft.core.Direction toNeighbour;
+        net.minecraft.world.level.block.state.properties.ChestType neighbourNeedsType;
+        if (myType == net.minecraft.world.level.block.state.properties.ChestType.LEFT) {
+            toNeighbour = facing.getClockWise();
+            neighbourNeedsType = net.minecraft.world.level.block.state.properties.ChestType.RIGHT;
         } else {
-            toNeighbour = facing.rotateYCounterclockwise();
-            neighbourNeedsType = net.minecraft.block.enums.ChestType.LEFT;
+            toNeighbour = facing.getCounterClockWise();
+            neighbourNeedsType = net.minecraft.world.level.block.state.properties.ChestType.LEFT;
         }
 
-        BlockPos neighbourPos = pos.offset(toNeighbour);
-        net.minecraft.block.BlockState neighbourState = world.getBlockState(neighbourPos);
+        BlockPos neighbourPos = pos.relative(toNeighbour);
+        net.minecraft.world.level.block.state.BlockState neighbourState = world.getBlockState(neighbourPos);
 
         if (neighbourState.getBlock() == block
-                && neighbourState.contains(net.minecraft.block.ChestBlock.CHEST_TYPE)
-                && neighbourState.contains(net.minecraft.block.ChestBlock.FACING)) {
-            net.minecraft.block.BlockState corrected = neighbourState
-                    .with(net.minecraft.block.ChestBlock.CHEST_TYPE, neighbourNeedsType)
-                    .with(net.minecraft.block.ChestBlock.FACING, facing);
+                && neighbourState.hasProperty(net.minecraft.world.level.block.ChestBlock.TYPE)
+                && neighbourState.hasProperty(net.minecraft.world.level.block.ChestBlock.FACING)) {
+            net.minecraft.world.level.block.state.BlockState corrected = neighbourState
+                    .setValue(net.minecraft.world.level.block.ChestBlock.TYPE, neighbourNeedsType)
+                    .setValue(net.minecraft.world.level.block.ChestBlock.FACING, facing);
             if (!corrected.equals(neighbourState)) {
                 // FORCE_STATE again: prevents getStateForNeighborUpdate from resetting
                 // this neighbour's type based on what is (or isn't) next to it yet.
-                world.setBlockState(neighbourPos, corrected,
-                        net.minecraft.block.Block.FORCE_STATE | net.minecraft.block.Block.NOTIFY_ALL);
+                world.setBlock(neighbourPos, corrected,
+                        net.minecraft.world.level.block.Block.UPDATE_KNOWN_SHAPE | net.minecraft.world.level.block.Block.UPDATE_ALL);
             }
         }
     }
 
-    private static void restoreChestBlock(ServerWorld world, BlockPos pos, net.minecraft.block.BlockState blockState, net.minecraft.nbt.NbtCompound nbtCompound) {
+    private static void restoreChestBlock(ServerLevel world, BlockPos pos, net.minecraft.world.level.block.state.BlockState blockState, net.minecraft.nbt.CompoundTag nbtCompound) {
         try {
             // Check if this is a double chest by looking at the chest type
-            if (blockState.contains(net.minecraft.block.ChestBlock.CHEST_TYPE)) {
-                net.minecraft.block.enums.ChestType chestType = blockState.get(net.minecraft.block.ChestBlock.CHEST_TYPE);
-                net.minecraft.util.math.Direction facing = blockState.get(net.minecraft.block.ChestBlock.FACING);
+            if (blockState.hasProperty(net.minecraft.world.level.block.ChestBlock.TYPE)) {
+                net.minecraft.world.level.block.state.properties.ChestType chestType = blockState.getValue(net.minecraft.world.level.block.ChestBlock.TYPE);
+                net.minecraft.core.Direction facing = blockState.getValue(net.minecraft.world.level.block.ChestBlock.FACING);
                 
-                if (chestType != net.minecraft.block.enums.ChestType.SINGLE) {
+                if (chestType != net.minecraft.world.level.block.state.properties.ChestType.SINGLE) {
                     // This is part of a double chest - ensure both halves are restored
                     BlockPos otherHalf = getOtherChestHalf(pos, facing, chestType);
                     
                     if (otherHalf != null) {
                         // Check if the other half exists and is properly configured
-                        net.minecraft.block.BlockState otherState = world.getBlockState(otherHalf);
+                        net.minecraft.world.level.block.state.BlockState otherState = world.getBlockState(otherHalf);
                         
-                        if (otherState.getBlock() instanceof net.minecraft.block.ChestBlock) {
-                            net.minecraft.block.enums.ChestType otherChestType = otherState.get(net.minecraft.block.ChestBlock.CHEST_TYPE);
-                            net.minecraft.util.math.Direction otherFacing = otherState.get(net.minecraft.block.ChestBlock.FACING);
+                        if (otherState.getBlock() instanceof net.minecraft.world.level.block.ChestBlock) {
+                            net.minecraft.world.level.block.state.properties.ChestType otherChestType = otherState.getValue(net.minecraft.world.level.block.ChestBlock.TYPE);
+                            net.minecraft.core.Direction otherFacing = otherState.getValue(net.minecraft.world.level.block.ChestBlock.FACING);
                             
                             // Ensure both halves have correct properties
                             if (otherFacing != facing || 
-                                (chestType == net.minecraft.block.enums.ChestType.LEFT && otherChestType != net.minecraft.block.enums.ChestType.RIGHT) ||
-                                (chestType == net.minecraft.block.enums.ChestType.RIGHT && otherChestType != net.minecraft.block.enums.ChestType.LEFT)) {
+                                (chestType == net.minecraft.world.level.block.state.properties.ChestType.LEFT && otherChestType != net.minecraft.world.level.block.state.properties.ChestType.RIGHT) ||
+                                (chestType == net.minecraft.world.level.block.state.properties.ChestType.RIGHT && otherChestType != net.minecraft.world.level.block.state.properties.ChestType.LEFT)) {
                                 
                                 // Fix the other half
-                                net.minecraft.block.enums.ChestType correctOtherType = 
-                                    chestType == net.minecraft.block.enums.ChestType.LEFT ? 
-                                    net.minecraft.block.enums.ChestType.RIGHT : net.minecraft.block.enums.ChestType.LEFT;
+                                net.minecraft.world.level.block.state.properties.ChestType correctOtherType = 
+                                    chestType == net.minecraft.world.level.block.state.properties.ChestType.LEFT ? 
+                                    net.minecraft.world.level.block.state.properties.ChestType.RIGHT : net.minecraft.world.level.block.state.properties.ChestType.LEFT;
                                 
-                                net.minecraft.block.BlockState correctedOtherState = net.minecraft.block.Blocks.CHEST.getDefaultState()
-                                    .with(net.minecraft.block.ChestBlock.FACING, facing)
-                                    .with(net.minecraft.block.ChestBlock.CHEST_TYPE, correctOtherType);
+                                net.minecraft.world.level.block.state.BlockState correctedOtherState = net.minecraft.world.level.block.Blocks.CHEST.defaultBlockState()
+                                    .setValue(net.minecraft.world.level.block.ChestBlock.FACING, facing)
+                                    .setValue(net.minecraft.world.level.block.ChestBlock.TYPE, correctOtherType);
                                 
-                                world.setBlockState(otherHalf, correctedOtherState);
+                                world.setBlockAndUpdate(otherHalf, correctedOtherState);
                             }
                         } else {
                             // Other half is missing - place it
-                            net.minecraft.block.enums.ChestType correctOtherType = 
-                                chestType == net.minecraft.block.enums.ChestType.LEFT ? 
-                                net.minecraft.block.enums.ChestType.RIGHT : net.minecraft.block.enums.ChestType.LEFT;
+                            net.minecraft.world.level.block.state.properties.ChestType correctOtherType = 
+                                chestType == net.minecraft.world.level.block.state.properties.ChestType.LEFT ? 
+                                net.minecraft.world.level.block.state.properties.ChestType.RIGHT : net.minecraft.world.level.block.state.properties.ChestType.LEFT;
                             
-                            net.minecraft.block.BlockState otherChestState = net.minecraft.block.Blocks.CHEST.getDefaultState()
-                                .with(net.minecraft.block.ChestBlock.FACING, facing)
-                                .with(net.minecraft.block.ChestBlock.CHEST_TYPE, correctOtherType);
+                            net.minecraft.world.level.block.state.BlockState otherChestState = net.minecraft.world.level.block.Blocks.CHEST.defaultBlockState()
+                                .setValue(net.minecraft.world.level.block.ChestBlock.FACING, facing)
+                                .setValue(net.minecraft.world.level.block.ChestBlock.TYPE, correctOtherType);
                             
-                            world.setBlockState(otherHalf, otherChestState);
+                            world.setBlockAndUpdate(otherHalf, otherChestState);
                         }
                         
                         // Force block updates to ensure proper double chest formation
-                        world.updateListeners(pos, blockState, blockState, 3);
-                        world.updateListeners(otherHalf, world.getBlockState(otherHalf), world.getBlockState(otherHalf), 3);
+                        world.sendBlockUpdated(pos, blockState, blockState, 3);
+                        world.sendBlockUpdated(otherHalf, world.getBlockState(otherHalf), world.getBlockState(otherHalf), 3);
                     }
                 }
             }
@@ -1777,59 +1777,59 @@ public class MineTracerCommand {
     /**
      * Calculate the position of the other half of a double chest
      */
-    private static BlockPos getOtherChestHalf(BlockPos chestPos, net.minecraft.util.math.Direction facing, net.minecraft.block.enums.ChestType chestType) {
-        net.minecraft.util.math.Direction otherHalfDirection;
+    private static BlockPos getOtherChestHalf(BlockPos chestPos, net.minecraft.core.Direction facing, net.minecraft.world.level.block.state.properties.ChestType chestType) {
+        net.minecraft.core.Direction otherHalfDirection;
         
         // Determine where the other half should be based on facing and type
-        if (chestType == net.minecraft.block.enums.ChestType.LEFT) {
+        if (chestType == net.minecraft.world.level.block.state.properties.ChestType.LEFT) {
             // Left chest, other half is to the right relative to facing
-            otherHalfDirection = facing.rotateYClockwise();
-        } else if (chestType == net.minecraft.block.enums.ChestType.RIGHT) {
+            otherHalfDirection = facing.getClockWise();
+        } else if (chestType == net.minecraft.world.level.block.state.properties.ChestType.RIGHT) {
             // Right chest, other half is to the left relative to facing
-            otherHalfDirection = facing.rotateYCounterclockwise();
+            otherHalfDirection = facing.getCounterClockWise();
         } else {
             // Single chest, no other half
             return null;
         }
         
-        return chestPos.offset(otherHalfDirection);
+        return chestPos.relative(otherHalfDirection);
     }
     
     @SuppressWarnings("unchecked")
-    private static <T extends Comparable<T>> net.minecraft.block.BlockState setBlockStateProperty(
-            net.minecraft.block.BlockState state, net.minecraft.state.property.Property<T> property, String value) {
-        java.util.Optional<T> parsedValue = property.parse(value);
+    private static <T extends Comparable<T>> net.minecraft.world.level.block.state.BlockState setBlockStateProperty(
+            net.minecraft.world.level.block.state.BlockState state, net.minecraft.world.level.block.state.properties.Property<T> property, String value) {
+        java.util.Optional<T> parsedValue = property.getValue(value);
         if (parsedValue.isPresent()) {
-            return state.with(property, parsedValue.get());
+            return state.setValue(property, parsedValue.get());
         }
         return state;
     }
-    private static boolean performSignRollback(ServerWorld world, MineTracerLookup.SignLogEntry entry) {
+    private static boolean performSignRollback(ServerLevel world, MineTracerLookup.SignLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
-            net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
-            if (blockEntity instanceof net.minecraft.block.entity.SignBlockEntity) {
-                net.minecraft.block.entity.SignBlockEntity signEntity = (net.minecraft.block.entity.SignBlockEntity) blockEntity;
+            net.minecraft.world.level.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
+            if (blockEntity instanceof net.minecraft.world.level.block.entity.SignBlockEntity) {
+                net.minecraft.world.level.block.entity.SignBlockEntity signEntity = (net.minecraft.world.level.block.entity.SignBlockEntity) blockEntity;
                 if (entry.nbt != null && !entry.nbt.isEmpty()) {
                     try {
                         com.google.gson.Gson gson = new com.google.gson.Gson();
                         com.google.gson.JsonObject nbtObj = gson.fromJson(entry.nbt, com.google.gson.JsonObject.class);
                         String[] beforeLines = gson.fromJson(nbtObj.get("before"), String[].class);
-                        net.minecraft.text.Text[] beforeTexts = new net.minecraft.text.Text[4];
+                        net.minecraft.network.chat.Component[] beforeTexts = new net.minecraft.network.chat.Component[4];
                         for (int i = 0; i < 4; i++) {
                             if (i < beforeLines.length && beforeLines[i] != null) {
-                                beforeTexts[i] = net.minecraft.text.Text.literal(beforeLines[i]);
+                                beforeTexts[i] = net.minecraft.network.chat.Component.literal(beforeLines[i]);
                             } else {
-                                beforeTexts[i] = net.minecraft.text.Text.literal("");
+                                beforeTexts[i] = net.minecraft.network.chat.Component.literal("");
                             }
                         }
                         try {
-                            net.minecraft.nbt.NbtCompound signNbt = signEntity.createNbt(world.getRegistryManager());
+                            net.minecraft.nbt.CompoundTag signNbt = signEntity.saveWithoutMetadata(world.registryAccess());
                             if (signNbt.contains("front_text")) {
-                                net.minecraft.nbt.NbtCompound frontText = signNbt.contains("front_text") && signNbt.get("front_text") instanceof net.minecraft.nbt.NbtCompound ? (net.minecraft.nbt.NbtCompound)signNbt.get("front_text") : new net.minecraft.nbt.NbtCompound();
-                                net.minecraft.nbt.NbtList messages = new net.minecraft.nbt.NbtList();
-                                for (net.minecraft.text.Text text : beforeTexts) {
-                                    net.minecraft.nbt.NbtElement jsonText = net.minecraft.text.TextCodecs.CODEC.encodeStart(net.minecraft.nbt.NbtOps.INSTANCE, text).getOrThrow();
+                                net.minecraft.nbt.CompoundTag frontText = signNbt.contains("front_text") && signNbt.get("front_text") instanceof net.minecraft.nbt.CompoundTag ? (net.minecraft.nbt.CompoundTag)signNbt.get("front_text") : new net.minecraft.nbt.CompoundTag();
+                                net.minecraft.nbt.ListTag messages = new net.minecraft.nbt.ListTag();
+                                for (net.minecraft.network.chat.Component text : beforeTexts) {
+                                    net.minecraft.nbt.Tag jsonText = net.minecraft.network.chat.ComponentSerialization.CODEC.encodeStart(net.minecraft.nbt.NbtOps.INSTANCE, text).getOrThrow();
                                     messages.add(jsonText);
                                 }
                                 frontText.put("messages", messages);
@@ -1839,8 +1839,8 @@ public class MineTracerCommand {
                         } catch (Exception nbtError) {
                             return false;
                         }
-                        signEntity.markDirty();
-                        world.updateListeners(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+                        signEntity.setChanged();
+                        world.sendBlockUpdated(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
                         
                         // CoreProtect-style: Mark as rolled back in database
                         markSignEntryRolledBack(entry, world);
@@ -1862,7 +1862,7 @@ public class MineTracerCommand {
     /**
      * Restore a withdrawal - removes the item from container (undoes the rollback that added it back)
      */
-    private static boolean performWithdrawalRestore(ServerWorld world, MineTracerLookup.ContainerLogEntry entry) {
+    private static boolean performWithdrawalRestore(ServerLevel world, MineTracerLookup.ContainerLogEntry entry) {
         // Restore withdrawal = remove item (same as deposit rollback)
         return performDepositRollback(world, entry);
     }
@@ -1870,7 +1870,7 @@ public class MineTracerCommand {
     /**
      * Restore a deposit - adds the item back to container (undoes the rollback that removed it)
      */
-    private static boolean performDepositRestore(ServerWorld world, MineTracerLookup.ContainerLogEntry entry) {
+    private static boolean performDepositRestore(ServerLevel world, MineTracerLookup.ContainerLogEntry entry) {
         // Restore deposit = add item (same as withdrawal rollback)
         return performWithdrawalRollback(world, entry);
     }
@@ -1878,23 +1878,23 @@ public class MineTracerCommand {
     /**
      * Restore a block placement - places the block again
      */
-    private static boolean performBlockRestore(ServerWorld world, MineTracerLookup.BlockLogEntry entry) {
+    private static boolean performBlockRestore(ServerLevel world, MineTracerLookup.BlockLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
             String blockId = entry.blockId;
-            net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK.get(Identifier.of(blockId));
+            net.minecraft.world.level.block.Block block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getValue(Identifier.parse(blockId));
             if (block != null) {
-                net.minecraft.block.BlockState newState = block.getDefaultState();
-                world.setBlockState(pos, newState, 3);
+                net.minecraft.world.level.block.state.BlockState newState = block.defaultBlockState();
+                world.setBlock(pos, newState, 3);
                 
                 // Apply NBT if available
                 if (entry.nbt != null && !entry.nbt.isEmpty()) {
                     try {
-                        net.minecraft.nbt.NbtCompound nbt = com.minetracer.features.minetracer.util.NbtCompatHelper.parseNbtString(entry.nbt);
-                        net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
+                        net.minecraft.nbt.CompoundTag nbt = com.minetracer.features.minetracer.util.NbtCompatHelper.parseNbtString(entry.nbt);
+                        net.minecraft.world.level.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
                         if (blockEntity != null) {
                             // readComponentsFromNbt not available in this version
-                            blockEntity.markDirty();
+                            blockEntity.setChanged();
                         }
                     } catch (Exception nbtError) {
                         // NBT parsing failed, but block was placed
@@ -1912,89 +1912,89 @@ public class MineTracerCommand {
     /**
      * Restore a block break - removes the block again
      */
-    private static boolean performBlockBreakRestore(ServerWorld world, MineTracerLookup.BlockLogEntry entry) {
+    private static boolean performBlockBreakRestore(ServerLevel world, MineTracerLookup.BlockLogEntry entry) {
         try {
             BlockPos pos = entry.pos;
-            world.setBlockState(pos, net.minecraft.block.Blocks.AIR.getDefaultState(), 3);
+            world.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
             return true;
         } catch (Exception e) {
             return false;
         }
     }
     
-    public static int lookupPage(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
+    public static int lookupPage(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
         if (!Permissions.check(source, "minetracer.command.page", 2)) {
-            source.sendError(Text.literal("You do not have permission to use this command."));
+            source.sendFailure(Component.literal("You do not have permission to use this command."));
             return 0;
         }
-        UUID playerId = source.getPlayer().getUuid();
+        UUID playerId = source.getPlayer().getUUID();
         QueryContext queryContext = lastQueries.get(playerId);
         if (queryContext == null) {
-            source.sendError(Text.literal("No previous lookup found. Please run a lookup command first."));
+            source.sendFailure(Component.literal("No previous lookup found. Please run a lookup command first."));
             return 0;
         }
         int page = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "page");
         displayPage(source, queryContext.results, page, queryContext.entriesPerPage);
         return Command.SINGLE_SUCCESS;
     }
-    public static int toggleInspector(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
+    public static int toggleInspector(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
         if (!Permissions.check(source, "minetracer.command.inspector", 2)) {
-            source.sendError(Text.literal("You do not have permission to use this command."));
+            source.sendFailure(Component.literal("You do not have permission to use this command."));
             return 0;
         }
-        ServerPlayerEntity player = source.getPlayer();
+        ServerPlayer player = source.getPlayer();
         boolean isInspector = OptimizedLogStorage.isInspectorMode(player);
         if (isInspector) {
             OptimizedLogStorage.setInspectorMode(player, false);
-            source.sendFeedback(() -> Text.literal("Inspector mode disabled.").formatted(Formatting.YELLOW), false);
+            source.sendSuccess(() -> Component.literal("Inspector mode disabled.").withStyle(ChatFormatting.YELLOW), false);
         } else {
             OptimizedLogStorage.setInspectorMode(player, true);
-            source.sendFeedback(
-                    () -> Text.literal("Inspector mode enabled. Right-click or break blocks to see their history.")
-                            .formatted(Formatting.GREEN),
+            source.sendSuccess(
+                    () -> Component.literal("Inspector mode enabled. Right-click or break blocks to see their history.")
+                            .withStyle(ChatFormatting.GREEN),
                     false);
         }
         return Command.SINGLE_SUCCESS;
     }
-    public static int save(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
+    public static int save(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
         if (!Permissions.check(source, "minetracer.command.save", 2)) {
-            source.sendError(Text.literal("You do not have permission to use this command."));
+            source.sendFailure(Component.literal("You do not have permission to use this command."));
             return 0;
         }
-        source.sendFeedback(() -> Text.literal("Forcing save of all log data...").formatted(Formatting.YELLOW), false);
+        source.sendSuccess(() -> Component.literal("Forcing save of all log data...").withStyle(ChatFormatting.YELLOW), false);
         try {
             OptimizedLogStorage.forceSave();
-            source.sendFeedback(
-                    () -> Text.literal("Successfully saved all log data to disk.").formatted(Formatting.GREEN), false);
+            source.sendSuccess(
+                    () -> Component.literal("Successfully saved all log data to disk.").withStyle(ChatFormatting.GREEN), false);
         } catch (Exception e) {
-            source.sendError(Text.literal("Error saving log data: " + e.getMessage()));
+            source.sendFailure(Component.literal("Error saving log data: " + e.getMessage()));
             return 0;
         }
         return Command.SINGLE_SUCCESS;
     }
-    public static int showSaveHistory(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
+    public static int showSaveHistory(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
         if (!Permissions.check(source, "minetracer.command.saves", 2)) {
-            source.sendError(Text.literal("You do not have permission to use this command."));
+            source.sendFailure(Component.literal("You do not have permission to use this command."));
             return 0;
         }
         List<OptimizedLogStorage.SaveHistory> saveHistory = OptimizedLogStorage.getSaveHistory();
         if (saveHistory.isEmpty()) {
-            source.sendFeedback(() -> Text.literal("No save history available yet.").formatted(Formatting.YELLOW), false);
+            source.sendSuccess(() -> Component.literal("No save history available yet.").withStyle(ChatFormatting.YELLOW), false);
             return Command.SINGLE_SUCCESS;
         }
-        source.sendFeedback(() -> Text.literal("=== MineTracer Save History (Last " + saveHistory.size() + " saves) ===").formatted(Formatting.GOLD), false);
+        source.sendSuccess(() -> Component.literal("=== MineTracer Save History (Last " + saveHistory.size() + " saves) ===").withStyle(ChatFormatting.GOLD), false);
         java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").withZone(java.time.ZoneId.systemDefault());
         for (int i = 0; i < saveHistory.size(); i++) {
             OptimizedLogStorage.SaveHistory save = saveHistory.get(i);
             String timeStr = formatter.format(save.timestamp);
             long kilobytes = save.fileSizeBytes / 1024;
-            Text message = Text.literal(String.format("[%d] %s - %,d entries (%,d KB)", 
-                i + 1, timeStr, save.totalEntries, kilobytes)).formatted(Formatting.WHITE);
-            source.sendFeedback(() -> message, false);
+            Component message = Component.literal(String.format("[%d] %s - %,d entries (%,d KB)", 
+                i + 1, timeStr, save.totalEntries, kilobytes)).withStyle(ChatFormatting.WHITE);
+            source.sendSuccess(() -> message, false);
         }
         return Command.SINGLE_SUCCESS;
     }
@@ -2033,13 +2033,13 @@ public class MineTracerCommand {
     /**
      * Mark a container entry as rolled back in database (CoreProtect-style)
      */
-    private static void markContainerEntryRolledBack(MineTracerLookup.ContainerLogEntry entry, ServerWorld world) {
+    private static void markContainerEntryRolledBack(MineTracerLookup.ContainerLogEntry entry, ServerLevel world) {
         try {
             java.util.concurrent.CompletableFuture.runAsync(() -> {
                 try (java.sql.Connection conn = com.minetracer.features.minetracer.database.MineTracerDatabase.getConnection()) {
                     if (conn == null) return;
                     
-                    String worldName = world.getRegistryKey().getValue().toString();
+                    String worldName = world.dimension().identifier().toString();
                     String sql = "UPDATE minetracer_container SET rolled_back = 1 WHERE " +
                                "user = (SELECT id FROM minetracer_user WHERE user = ?) AND " +
                                "wid = (SELECT id FROM minetracer_world WHERE world = ?) AND " +
@@ -2066,13 +2066,13 @@ public class MineTracerCommand {
     /**
      * Mark a block entry as rolled back in database (CoreProtect-style)
      */
-    private static void markBlockEntryRolledBack(MineTracerLookup.BlockLogEntry entry, ServerWorld world) {
+    private static void markBlockEntryRolledBack(MineTracerLookup.BlockLogEntry entry, ServerLevel world) {
         try {
             java.util.concurrent.CompletableFuture.runAsync(() -> {
                 try (java.sql.Connection conn = com.minetracer.features.minetracer.database.MineTracerDatabase.getConnection()) {
                     if (conn == null) return;
                     
-                    String worldName = world.getRegistryKey().getValue().toString();
+                    String worldName = world.dimension().identifier().toString();
                     String sql = "UPDATE minetracer_block SET rolled_back = 1 WHERE " +
                                "user = (SELECT id FROM minetracer_user WHERE user = ?) AND " +
                                "wid = (SELECT id FROM minetracer_world WHERE world = ?) AND " +
@@ -2099,13 +2099,13 @@ public class MineTracerCommand {
     /**
      * Mark a sign entry as rolled back in database (CoreProtect-style)
      */
-    private static void markSignEntryRolledBack(MineTracerLookup.SignLogEntry entry, ServerWorld world) {
+    private static void markSignEntryRolledBack(MineTracerLookup.SignLogEntry entry, ServerLevel world) {
         try {
             java.util.concurrent.CompletableFuture.runAsync(() -> {
                 try (java.sql.Connection conn = com.minetracer.features.minetracer.database.MineTracerDatabase.getConnection()) {
                     if (conn == null) return;
                     
-                    String worldName = world.getRegistryKey().getValue().toString();
+                    String worldName = world.dimension().identifier().toString();
                     String sql = "UPDATE minetracer_sign SET rolled_back = 1 WHERE " +
                                "user = (SELECT id FROM minetracer_user WHERE user = ?) AND " +
                                "wid = (SELECT id FROM minetracer_world WHERE world = ?) AND " +
@@ -2133,16 +2133,16 @@ public class MineTracerCommand {
      * Send a ghost block packet to a player (client-side only)
      * The block appears only to this player and disappears when they relog or the chunk reloads
      */
-    private static void sendGhostBlock(ServerPlayerEntity player, BlockPos pos, String blockId, String nbtString) {
+    private static void sendGhostBlock(ServerPlayer player, BlockPos pos, String blockId, String nbtString) {
         try {
             // Parse the block ID and get the block state
-            Identifier identifier = Identifier.of(blockId);
-            Block block = Registries.BLOCK.get(identifier);
-            BlockState state = block.getDefaultState();
+            Identifier identifier = Identifier.parse(blockId);
+            Block block = BuiltInRegistries.BLOCK.getValue(identifier);
+            BlockState state = block.defaultBlockState();
             
             // Send the block update packet to the player only
-            BlockUpdateS2CPacket packet = new BlockUpdateS2CPacket(pos, state);
-            player.networkHandler.sendPacket(packet);
+            ClientboundBlockUpdatePacket packet = new ClientboundBlockUpdatePacket(pos, state);
+            player.connection.send(packet);
             
             // Note: NBT data (for signs, chests, etc.) would require additional block entity packets
             // For now, we just show the block type as a ghost block

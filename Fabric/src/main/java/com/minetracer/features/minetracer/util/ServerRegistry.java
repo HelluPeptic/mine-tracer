@@ -1,6 +1,6 @@
 package com.minetracer.features.minetracer.util;
 
-import net.minecraft.registry.RegistryWrapper;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.server.MinecraftServer;
 
 /**
@@ -17,10 +17,10 @@ public class ServerRegistry {
         return server;
     }
     
-    public static RegistryWrapper.WrapperLookup getRegistryManager() {
+    public static HolderLookup.Provider getRegistryManager() {
         if (server == null) {
             throw new IllegalStateException("Server not initialized yet");
         }
-        return server.getRegistryManager();
+        return server.registryAccess();
     }
 }

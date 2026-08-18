@@ -1,9 +1,9 @@
 package com.minetracer.features.minetracer.util;
 
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
 import java.util.List;
 import java.util.stream.Collectors;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 
 /**
  * Utility class for matching materials/items with include/exclude support
@@ -94,7 +94,7 @@ public class MaterialMatcher {
     public static List<String> getSuggestions(String partialName) {
         String partialLower = partialName.toLowerCase();
         
-        return Registries.ITEM.getIds()
+        return BuiltInRegistries.ITEM.keySet()
                 .stream()
                 .map(Identifier::toString)
                 .filter(id -> {
@@ -119,7 +119,7 @@ public class MaterialMatcher {
     public static List<String> getBlockSuggestions(String partialName) {
         String partialLower = partialName.toLowerCase();
         
-        return Registries.BLOCK.getIds()
+        return BuiltInRegistries.BLOCK.keySet()
                 .stream()
                 .map(Identifier::toString)
                 .filter(id -> {

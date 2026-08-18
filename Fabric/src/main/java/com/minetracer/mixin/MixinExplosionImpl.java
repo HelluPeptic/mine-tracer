@@ -1,7 +1,12 @@
 package com.minetracer.mixin;
 
 import java.util.List;
-
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Explosion;
+import net.minecraft.world.level.ServerExplosion;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -9,20 +14,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.minetracer.features.minetracer.listeners.ExplosionEventListener;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.explosion.Explosion;
-import net.minecraft.world.explosion.ExplosionImpl;
-
 /**
  * Mirrors CoreProtect's EntityExplodeListener approach:
  * injects at the HEAD of destroyBlocks() which is called with the exact list
  * of blocks that WILL be destroyed, while those blocks still exist in the world.
  * This is the Fabric 1.21.11 equivalent of Bukkit's EntityExplodeEvent.blockList().
  */
-@Mixin(ExplosionImpl.class)
+@Mixin(ServerExplosion.class)
 public class MixinExplosionImpl {
 
     /**
@@ -31,15 +29,15 @@ public class MixinExplosionImpl {
      * inside EntityExplodeEvent before blocks are removed.
      * Uses the Explosion interface methods (getWorld/getEntity) to avoid @Shadow field remapping issues.
      */
-    @Inject(method = "destroyBlocks", at = @At("HEAD"))
+    @Inject(method = "interactWithBlocks", at = @At("HEAD"))
     private void onDestroyBlocks(List<BlockPos> positions, CallbackInfo ci) {
         try {
             Explosion explosion = (Explosion) this;
-            if (!(explosion.getWorld() instanceof ServerWorld)) {
+            if (!(explosion.level() instanceof ServerLevel)) {
                 return;
             }
-            ServerWorld serverWorld = (ServerWorld) explosion.getWorld();
-            net.minecraft.entity.Entity entity = explosion.getEntity();
+            ServerLevel serverWorld = (ServerLevel) explosion.level();
+            net.minecraft.world.entity.Entity entity = explosion.getDirectSourceEntity();
 
             for (BlockPos pos : positions) {
                 BlockState state = serverWorld.getBlockState(pos);

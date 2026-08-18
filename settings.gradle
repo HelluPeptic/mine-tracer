@@ -36,9 +36,5 @@ pluginManagement {
     }
 }
 
-plugins {
-    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
-}
-
-rootProject.name = 'MineTracer-26.1.2'
+rootProject.name = 'MineTracer-1.21.11'
 include("Fabric")

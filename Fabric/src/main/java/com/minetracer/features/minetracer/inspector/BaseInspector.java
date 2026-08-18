@@ -1,11 +1,9 @@
 package com.minetracer.features.minetracer.inspector;
 
 import java.util.concurrent.ConcurrentHashMap;
-
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import com.minetracer.features.minetracer.config.MineTracerConfig;
-
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
 
 /**
  * Base inspector class following CoreProtect's pattern
@@ -19,7 +17,7 @@ public abstract class BaseInspector {
     /**
      * Check preconditions before performing inspection
      */
-    protected void checkPreconditions(ServerPlayerEntity player) throws InspectionException {
+    protected void checkPreconditions(ServerPlayer player) throws InspectionException {
         // Check if database is busy (similar to CoreProtect's throttling)
         String playerName = player.getName().getString();
         Object[] throttleInfo = lookupThrottle.get(playerName);
@@ -38,7 +36,7 @@ public abstract class BaseInspector {
     /**
      * Start an inspection (set throttling)
      */
-    protected void startInspection(ServerPlayerEntity player) {
+    protected void startInspection(ServerPlayer player) {
         String playerName = player.getName().getString();
         lookupThrottle.put(playerName, new Object[] { true, System.currentTimeMillis() });
     }
@@ -46,7 +44,7 @@ public abstract class BaseInspector {
     /**
      * Finish an inspection (clear throttling)
      */
-    protected void finishInspection(ServerPlayerEntity player) {
+    protected void finishInspection(ServerPlayer player) {
         String playerName = player.getName().getString();
         lookupThrottle.put(playerName, new Object[] { false, System.currentTimeMillis() });
     }
@@ -54,8 +52,8 @@ public abstract class BaseInspector {
     /**
      * Send a formatted message to the player (CoreProtect style)
      */
-    protected void sendMessage(ServerPlayerEntity player, String message) {
-        player.sendMessage(Text.literal(message));
+    protected void sendMessage(ServerPlayer player, String message) {
+        player.sendSystemMessage(Component.literal(message));
     }
     
     /**

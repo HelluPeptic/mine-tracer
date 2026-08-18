@@ -6,13 +6,11 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.item.ItemStack;
 import com.minetracer.features.minetracer.util.NbtCompatHelper;
-
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.math.BlockPos;
 
 /**
  * MineTracer Database Processor
@@ -348,7 +346,7 @@ public class MineTracerProcessor {
      * Get material ID from ItemStack
      */
     private int getMaterialId(ItemStack stack) {
-        return Registries.ITEM.getRawId(stack.getItem());
+        return BuiltInRegistries.ITEM.getId(stack.getItem());
     }
     
     /**
@@ -356,7 +354,7 @@ public class MineTracerProcessor {
      */
     private byte[] serializeItemStack(ItemStack stack) {
         try {
-            NbtCompound nbt = (NbtCompound) NbtCompatHelper.itemStackToNbt(stack, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
+            CompoundTag nbt = (CompoundTag) NbtCompatHelper.itemStackToNbt(stack, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
             return nbt.toString().getBytes("UTF-8");
         } catch (Exception e) {
             System.err.println("[MineTracer] Failed to serialize ItemStack: " + e.getMessage());

@@ -2,10 +2,9 @@ package com.minetracer.features.minetracer.inspector;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerPlayer;
 import com.minetracer.features.minetracer.database.MineTracerLookup;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.math.BlockPos;
 
 /**
  * Interaction inspector for right-click on regular blocks
@@ -16,14 +15,14 @@ public class InteractionInspector extends BaseInspector {
     /**
      * Perform interaction lookup for right-clicked block (CoreProtect style)
      */
-    public void performInteractionLookup(ServerPlayerEntity player, BlockPos pos) {
+    public void performInteractionLookup(ServerPlayer player, BlockPos pos) {
         // Run in separate thread like CoreProtect does
         CompletableFuture.runAsync(() -> {
             try {
                 checkPreconditions(player);
                 startInspection(player);
                 
-                String worldName = ((com.minetracer.mixin.EntityAccessor)player).getWorld().getRegistryKey().getValue().toString();
+                String worldName = ((com.minetracer.mixin.EntityAccessor)player).getWorld().dimension().identifier().toString();
                 
                 // Get recent block logs at this position (shows who placed/broke what)
                 CompletableFuture<List<MineTracerLookup.BlockLogEntry>> blockLogsFuture = 
@@ -46,11 +45,11 @@ public class InteractionInspector extends BaseInspector {
                 String inspectorQuery = "inspector:interaction:" + pos.getX() + "," + pos.getY() + "," + pos.getZ();
                 com.minetracer.features.minetracer.MineTracerCommand.QueryContext queryContext = 
                     new com.minetracer.features.minetracer.MineTracerCommand.QueryContext(flatList, inspectorQuery, pos);
-                com.minetracer.features.minetracer.MineTracerCommand.lastQueries.put(player.getUuid(), queryContext);
+                com.minetracer.features.minetracer.MineTracerCommand.lastQueries.put(player.getUUID(), queryContext);
                 
                 // Display first page using existing display system
                 com.minetracer.features.minetracer.MineTracerCommand.displayPage(
-                    player.getCommandSource(), flatList, 1, queryContext.entriesPerPage);
+                    player.createCommandSourceStack(), flatList, 1, queryContext.entriesPerPage);
                 
                 if (flatList.size() > queryContext.entriesPerPage) {
                     sendMessage(player, "§3MineTracer §f- §7Use §6/minetracer page <number> §7to view more results.");

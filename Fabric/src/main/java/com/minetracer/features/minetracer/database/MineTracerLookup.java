@@ -11,13 +11,11 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.item.ItemStack;
 import com.minetracer.features.minetracer.util.NbtCompatHelper;
-
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.math.BlockPos;
 
 /**
  * MineTracer Database Lookup System
@@ -401,7 +399,7 @@ public class MineTracerLookup {
         BlockPos pos = new BlockPos(x, y, z);
         
         // Range check if needed
-        if (center != null && pos.getSquaredDistance(center) > range * range) {
+        if (center != null && pos.distSqr(center) > range * range) {
             return null;
         }
         
@@ -429,7 +427,7 @@ public class MineTracerLookup {
         BlockPos pos = new BlockPos(x, y, z);
         
         // Range check if needed
-        if (center != null && pos.getSquaredDistance(center) > range * range) {
+        if (center != null && pos.distSqr(center) > range * range) {
             return null;
         }
         
@@ -447,7 +445,7 @@ public class MineTracerLookup {
                 String nbtString = new String(data, "UTF-8");
                 if (!nbtString.trim().isEmpty() && !nbtString.equals("{}")) {
                     try {
-                        NbtCompound nbt = NbtCompatHelper.parseNbtString(nbtString);
+                        CompoundTag nbt = NbtCompatHelper.parseNbtString(nbtString);
                         if (!nbt.isEmpty()) {
                             ItemStack result = NbtCompatHelper.itemStackFromNbt(nbt, com.minetracer.features.minetracer.util.ServerRegistry.getRegistryManager());
                             if (!result.isEmpty()) {
@@ -464,8 +462,8 @@ public class MineTracerLookup {
             if (typeId > 0 && amount > 0) {
                 try {
                     // Get item from registry using ID
-                    net.minecraft.item.Item item = Registries.ITEM.get(typeId);
-                    if (item != null && item != net.minecraft.item.Items.AIR) {
+                    net.minecraft.world.item.Item item = BuiltInRegistries.ITEM.byId(typeId);
+                    if (item != null && item != net.minecraft.world.item.Items.AIR) {
                         return new ItemStack(item, amount);
                     }
                 } catch (Exception registryException) {
@@ -474,14 +472,14 @@ public class MineTracerLookup {
             }
             
             // Last resort: create a barrier item with a warning name to indicate corruption
-            ItemStack placeholder = new ItemStack(net.minecraft.item.Items.BARRIER, Math.max(1, amount));
-            placeholder.set(net.minecraft.component.DataComponentTypes.CUSTOM_NAME, net.minecraft.text.Text.literal("§c[Corrupted Item Data]"));
+            ItemStack placeholder = new ItemStack(net.minecraft.world.item.Items.BARRIER, Math.max(1, amount));
+            placeholder.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal("§c[Corrupted Item Data]"));
             return placeholder;
             
         } catch (Exception e) {
             // Return placeholder barrier item for corrupted data
-            ItemStack placeholder = new ItemStack(net.minecraft.item.Items.BARRIER, 1);
-            placeholder.set(net.minecraft.component.DataComponentTypes.CUSTOM_NAME, net.minecraft.text.Text.literal("§c[Critical Error - Item Data Lost]"));
+            ItemStack placeholder = new ItemStack(net.minecraft.world.item.Items.BARRIER, 1);
+            placeholder.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, net.minecraft.network.chat.Component.literal("§c[Critical Error - Item Data Lost]"));
             return placeholder;
         }
     }
@@ -775,7 +773,7 @@ public class MineTracerLookup {
                         BlockPos pos = new BlockPos(x, y, z);
                         
                         // Range check if needed
-                        if (center != null && pos.getSquaredDistance(center) > range * range) {
+                        if (center != null && pos.distSqr(center) > range * range) {
                             continue;
                         }
                         
@@ -858,7 +856,7 @@ public class MineTracerLookup {
                         BlockPos pos = new BlockPos(x, y, z);
                         
                         // Range check if needed
-                        if (center != null && pos.getSquaredDistance(center) > range * range) {
+                        if (center != null && pos.distSqr(center) > range * range) {
                             continue;
                         }
                         

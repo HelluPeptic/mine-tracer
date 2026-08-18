@@ -1,23 +1,23 @@
 package com.minetracer.features.minetracer;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
-import net.minecraft.block.Block;
-import net.minecraft.block.Blocks;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 public class OptimizedChestEventListener {
     public static void register() {
         PlayerBlockBreakEvents.BEFORE.register((world, player, pos, state, blockEntity) -> {
             Block block = state.getBlock();
-            if (isTrackedContainer(block) && blockEntity instanceof Inventory inv) {
+            if (isTrackedContainer(block) && blockEntity instanceof Container inv) {
 
                 java.util.concurrent.CompletableFuture.runAsync(() -> {
                     // Use canonical position for consistent double chest handling
                     BlockPos canonicalPos = ContainerPositionTracker.getContainerPosition(world, pos);
-                    BlockPos entityPos = canonicalPos != null ? canonicalPos : blockEntity.getPos();
+                    BlockPos entityPos = canonicalPos != null ? canonicalPos : blockEntity.getBlockPos();
 
-                    for (int i = 0; i < inv.size(); i++) {
-                        ItemStack stack = inv.getStack(i);
+                    for (int i = 0; i < inv.getContainerSize(); i++) {
+                        ItemStack stack = inv.getItem(i);
                         if (!stack.isEmpty()) {
                             NewOptimizedLogStorage.logContainerAction("withdrew", player, entityPos, stack);
                         }
@@ -56,7 +56,7 @@ public class OptimizedChestEventListener {
         
         // Dynamic detection for modded containers
         try {
-            String blockId = net.minecraft.registry.Registries.BLOCK.getId(block).toString();
+            String blockId = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block).toString();
             
             // More Chest Variants compatibility - check multiple possible mod IDs
             if ((blockId.startsWith("morechestVariants:") || 
@@ -73,12 +73,12 @@ public class OptimizedChestEventListener {
             }
             
             // Check if it's a ChestBlock (common base class for chest-like blocks)
-            if (block instanceof net.minecraft.block.ChestBlock) {
+            if (block instanceof net.minecraft.world.level.block.ChestBlock) {
                 return true;
             }
             
             // Legacy detection using translation key
-            String translationKey = block.getTranslationKey();
+            String translationKey = block.getDescriptionId();
             return translationKey.contains("shulker_box") ||
                    translationKey.contains("backpack") ||
                    translationKey.contains("chest");
